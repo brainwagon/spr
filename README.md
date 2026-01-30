@@ -51,6 +51,7 @@ gcc test.c spr.c -o test_spr -lm
 *   **Left Mouse Drag**: Rotate (Orbit)
 *   **Right Mouse Drag**: Pan
 *   **Mouse Wheel**: Zoom
+*   **'f' Key**: Toggle FPS display
 
 ## Project Structure
 

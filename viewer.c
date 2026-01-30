@@ -185,12 +185,30 @@ int main(int argc, char* argv[]) {
     view.pan_x = 0.0f;
     view.pan_y = 0.0f;
     
+    /* FPS State */
+    int show_fps = 0;
+    int frame_count = 0;
+    int current_fps = 0;
+    uint32_t last_time = SDL_GetTicks();
+
     /* Main Loop */
     int running = 1;
     while (running) {
         SDL_Event e;
         while (SDL_PollEvent(&e)) {
             if (e.type == SDL_QUIT) running = 0;
+            else if (e.type == SDL_KEYDOWN) {
+                if (e.key.keysym.sym == SDLK_f) {
+                    show_fps = !show_fps;
+                    if (!show_fps) {
+                        SDL_SetWindowTitle(window, "SPR STL Viewer");
+                    } else {
+                        char title[64];
+                        snprintf(title, sizeof(title), "SPR STL Viewer [FPS: %d]", current_fps);
+                        SDL_SetWindowTitle(window, title);
+                    }
+                }
+            }
             else if (e.type == SDL_MOUSEBUTTONDOWN) {
                 if (e.button.button == SDL_BUTTON_LEFT) view.mouse_down_left = 1;
                 if (e.button.button == SDL_BUTTON_RIGHT) view.mouse_down_right = 1;
@@ -267,6 +285,19 @@ int main(int argc, char* argv[]) {
         SDL_RenderClear(renderer);
         SDL_RenderCopy(renderer, texture, NULL, NULL);
         SDL_RenderPresent(renderer);
+
+        /* FPS Update */
+        frame_count++;
+        if (SDL_GetTicks() - last_time >= 1000) {
+            current_fps = frame_count;
+            frame_count = 0;
+            last_time = SDL_GetTicks();
+            if (show_fps) {
+                char title[64];
+                snprintf(title, sizeof(title), "SPR STL Viewer [FPS: %d]", current_fps);
+                SDL_SetWindowTitle(window, title);
+            }
+        }
     }
     
     spr_shutdown(ctx);
