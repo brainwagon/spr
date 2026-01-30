@@ -12,6 +12,19 @@ void spr_uniforms_set_color(spr_shader_uniforms_t* u, float r, float g, float b,
     u->color.w = a;
 }
 
+void spr_uniforms_set_light_dir(spr_shader_uniforms_t* u, float x, float y, float z) {
+    if (!u) return;
+    /* We normalize it here for safety, though shaders also normalize */
+    float len = sqrtf(x*x + y*y + z*z);
+    if (len > 0.0f) {
+        u->light_dir.x = x / len;
+        u->light_dir.y = y / len;
+        u->light_dir.z = z / len;
+    } else {
+        u->light_dir.x = 0.0f; u->light_dir.y = 0.0f; u->light_dir.z = 1.0f;
+    }
+}
+
 static void decode_stl_color(uint16_t attr, vec4_t* out_color) {
     /* If attribute is 0, default to White */
     if (attr == 0) {

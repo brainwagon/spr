@@ -31,5 +31,6 @@ spr_color_t spr_shader_metal_fs(void* user_data, const spr_vertex_out_t* interpo
 
 /* --- Helpers --- */
 void spr_uniforms_set_color(spr_shader_uniforms_t* u, float r, float g, float b, float a);
+void spr_uniforms_set_light_dir(spr_shader_uniforms_t* u, float x, float y, float z);
 
 #endif /* SPR_SHADERS_H */
