@@ -19,11 +19,15 @@ spr.o: spr.c spr.h
 stl.o: stl.c stl.h
 	$(CC) $(CFLAGS) -c stl.c -o stl.o
 
-# Viewer
-viewer: viewer.o stl.o libspr.a
-	$(CC) $(CFLAGS) $(SDL_CFLAGS) -o $@ viewer.o stl.o $(LDFLAGS) -lspr $(SDL_LIBS) $(LIBS)
+# Shaders
+spr_shaders.o: spr_shaders.c spr_shaders.h spr.h stl.h
+	$(CC) $(CFLAGS) -c spr_shaders.c -o spr_shaders.o
 
-viewer.o: viewer.c spr.h stl.h
+# Viewer
+viewer: viewer.o stl.o spr_shaders.o libspr.a
+	$(CC) $(CFLAGS) $(SDL_CFLAGS) -o $@ viewer.o stl.o spr_shaders.o $(LDFLAGS) -lspr $(SDL_LIBS) $(LIBS)
+
+viewer.o: viewer.c spr.h stl.h spr_shaders.h
 	$(CC) $(CFLAGS) $(SDL_CFLAGS) -c viewer.c -o viewer.o
 
 # Standalone Test

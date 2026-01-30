@@ -1,5 +1,6 @@
 #include <SDL2/SDL.h>
 #include "spr.h"
+#include "spr_shaders.h"
 #include "stl.h"
 #include <stdio.h>
 #include <math.h>
@@ -22,87 +23,30 @@ typedef struct {
     int last_mouse_y;
 } view_state_t;
 
-/* --- Shader Uniforms --- */
-typedef struct {
-    mat4_t mvp;
-    mat4_t model; /* To transform normals to world space */
-    vec3_t light_dir;
-    vec3_t eye_pos;
-} plastic_uniforms_t;
-
-/* --- Math Helpers for Shader --- */
-static float dot(vec3_t a, vec3_t b) { return a.x*b.x + a.y*b.y + a.z*b.z; }
-static vec3_t normalize(vec3_t v) {
-    float len = sqrtf(dot(v, v));
+/* --- Math Helpers --- */
+static float sh_dot(vec3_t a, vec3_t b) { return a.x*b.x + a.y*b.y + a.z*b.z; }
+static vec3_t sh_normalize(vec3_t v) {
+    float len = sqrtf(sh_dot(v, v));
     if (len > 0) { v.x/=len; v.y/=len; v.z/=len; }
     return v;
 }
-static vec3_t reflect(vec3_t i, vec3_t n) {
-    float d = dot(i, n);
-    vec3_t r;
-    r.x = i.x - 2.0f * d * n.x;
-    r.y = i.y - 2.0f * d * n.y;
-    r.z = i.z - 2.0f * d * n.z;
-    return r;
-}
 
-/* --- Vertex Shader --- */
-void plastic_vs(void* user_data, const void* input_vertex, spr_vertex_out_t* out) {
-    plastic_uniforms_t* u = (plastic_uniforms_t*)user_data;
-    const stl_vertex_t* v = (const stl_vertex_t*)input_vertex;
-    
-    vec4_t pos = {v->x, v->y, v->z, 1.0f};
-    out->position = spr_mat4_mul_vec4(u->mvp, pos);
-    
-    /* Pass Normal (Simple: assuming no non-uniform scaling, model matrix is rotation mostly) */
-    /* Technically needs Inverse Transpose of Model, but if Model is rigid, it's fine. */
-    vec4_t n4 = {v->nx, v->ny, v->nz, 0.0f};
-    n4 = spr_mat4_mul_vec4(u->model, n4);
-    
-    out->normal.x = n4.x; out->normal.y = n4.y; out->normal.z = n4.z;
-}
+/* Shader Enum */
+typedef enum {
+    SHADER_CONSTANT,
+    SHADER_MATTE,
+    SHADER_PLASTIC,
+    SHADER_METAL
+} shader_type_t;
 
-/* --- Fragment Shader --- */
-spr_color_t plastic_fs(void* user_data, const spr_vertex_out_t* interpolated) {
-    plastic_uniforms_t* u = (plastic_uniforms_t*)user_data;
-    
-    vec3_t N = normalize(interpolated->normal);
-    vec3_t L = normalize(u->light_dir);
-    
-    /* Diffuse (Lambert) */
-    float diff = dot(N, L);
-    if (diff < 0) diff = 0;
-    
-    /* Ambient */
-    float amb = 0.2f;
-    
-    /* Specular (Phong) */
-    float spec = 0.0f;
-    if (diff > 0) {
-        vec3_t V = {0.0f, 0.0f, 1.0f}; /* Approximate view direction */
-        vec3_t R = reflect((vec3_t){-L.x, -L.y, -L.z}, N);
-        float s = dot(R, V);
-        if (s > 0) {
-            spec = powf(s, 32.0f);
-        }
+const char* get_shader_name(shader_type_t s) {
+    switch(s) {
+        case SHADER_CONSTANT: return "Constant";
+        case SHADER_MATTE: return "Matte";
+        case SHADER_PLASTIC: return "Plastic";
+        case SHADER_METAL: return "Metal";
+        default: return "Unknown";
     }
-    
-    /* Color: Grey Plastic */
-    float r = 0.7f * (diff + amb) + spec * 0.4f;
-    float g = 0.7f * (diff + amb) + spec * 0.4f;
-    float b = 0.7f * (diff + amb) + spec * 0.4f;
-    
-    if (r > 1.0f) r = 1.0f;
-    if (g > 1.0f) g = 1.0f;
-    if (b > 1.0f) b = 1.0f;
-    
-    spr_color_t c;
-    c.r = (uint8_t)(r * 255);
-    c.g = (uint8_t)(g * 255);
-    c.b = (uint8_t)(b * 255);
-    c.a = 255;
-    
-    return c;
 }
 
 int main(int argc, char* argv[]) {
@@ -193,8 +137,10 @@ int main(int argc, char* argv[]) {
     view.pan_x = 0.0f;
     view.pan_y = 0.0f;
     
+    shader_type_t current_shader = SHADER_PLASTIC;
+    
     /* FPS State */
-    int show_fps = 1; /* Default ON */
+    int show_fps = 1;
     int frame_count = 0;
     int current_fps = 0;
     double current_render_ms = 0.0;
@@ -209,18 +155,16 @@ int main(int argc, char* argv[]) {
         while (SDL_PollEvent(&e)) {
             if (e.type == SDL_QUIT) running = 0;
             else if (e.type == SDL_KEYDOWN) {
-                if (e.key.keysym.sym == SDLK_f) {
-                    show_fps = !show_fps;
-                    if (!show_fps) {
-                        SDL_SetWindowTitle(window, "SPR STL Viewer");
-                    } else {
-                        char title[128];
-                        snprintf(title, sizeof(title), "SPR STL Viewer [FPS: %d] [Render: %.2f ms]", current_fps, current_render_ms);
-                        SDL_SetWindowTitle(window, title);
-                    }
-                } else if (e.key.keysym.sym == SDLK_ESCAPE) {
-                    running = 0;
+                switch (e.key.keysym.sym) {
+                    case SDLK_ESCAPE: running = 0; break;
+                    case SDLK_f: show_fps = !show_fps; break;
+                    case SDLK_1: current_shader = SHADER_CONSTANT; break;
+                    case SDLK_2: current_shader = SHADER_MATTE; break;
+                    case SDLK_3: current_shader = SHADER_PLASTIC; break;
+                    case SDLK_4: current_shader = SHADER_METAL; break;
                 }
+                
+                /* Immediate title update if paused logic existed, but we redraw anyway */
             }
             else if (e.type == SDL_MOUSEBUTTONDOWN) {
                 if (e.button.button == SDL_BUTTON_LEFT) view.mouse_down_left = 1;
@@ -279,13 +223,45 @@ int main(int argc, char* argv[]) {
         spr_translate(ctx, -cx, -cy, -cz); /* Center model */
 
         /* Uniforms */
-        plastic_uniforms_t u;
+        spr_shader_uniforms_t u;
         u.mvp = spr_mat4_mul(spr_get_projection_matrix(ctx), spr_get_modelview_matrix(ctx));
-        u.model = spr_get_modelview_matrix(ctx); /* Approximation for normals */
-        u.light_dir = (vec3_t){0.5f, 1.0f, 1.0f}; /* Light from top-right-front */
-        u.light_dir = normalize(u.light_dir);
+        u.model = spr_get_modelview_matrix(ctx);
+        u.light_dir = (vec3_t){0.5f, 1.0f, 1.0f}; 
+        u.light_dir = sh_normalize(u.light_dir);
+        u.eye_pos = eye; /* Simplified (in local view space eye is 0,0,dist if not rotated?) 
+                            Actually spr_lookat transforms world to view. 
+                            Shader expects World Space or View Space? 
+                            My plastic shader did N dot L in whatever space N and L were in.
+                            Here L is fixed (0.5, 1, 1).
+                            Model matrix transforms N to World Space (if ModelView includes View, it transforms to View).
+                            Wait, spr_get_modelview_matrix returns View * Model.
+                            So normals are in View Space.
+                            So L should be in View Space too if we want fixed light relative to camera?
+                            Or if L is world space light, we need to transform it by View matrix?
+                            For "Headlight", L is fixed relative to Camera.
+                            If I use `spr_get_modelview_matrix` for `u.model`, then N is in View Space.
+                            So if I define L as (0.5, 1, 1), it is fixed relative to Camera (View Space).
+                            This is consistent with "Plastic" behavior I had. */
         
-        spr_set_program(ctx, plastic_vs, plastic_fs, &u);
+        u.color = (vec4_t){0.7f, 0.7f, 0.7f, 1.0f}; /* Default Grey */
+        u.roughness = 32.0f;
+
+        switch (current_shader) {
+            case SHADER_CONSTANT:
+                spr_set_program(ctx, spr_shader_constant_vs, spr_shader_constant_fs, &u);
+                break;
+            case SHADER_MATTE:
+                spr_set_program(ctx, spr_shader_matte_vs, spr_shader_matte_fs, &u);
+                break;
+            case SHADER_PLASTIC:
+                spr_set_program(ctx, spr_shader_plastic_vs, spr_shader_plastic_fs, &u);
+                break;
+            case SHADER_METAL:
+                u.color = (vec4_t){0.95f, 0.85f, 0.5f, 1.0f}; /* Gold tint */
+                u.roughness = 64.0f;
+                spr_set_program(ctx, spr_shader_metal_vs, spr_shader_metal_fs, &u);
+                break;
+        }
         
         /* Draw */
         spr_draw_triangles(ctx, mesh->vertex_count / 3, mesh->vertices, sizeof(stl_vertex_t));
@@ -314,8 +290,11 @@ int main(int argc, char* argv[]) {
             last_time = SDL_GetTicks();
             if (show_fps) {
                 char title[128];
-                snprintf(title, sizeof(title), "SPR STL Viewer [FPS: %d] [Render: %.2f ms]", current_fps, current_render_ms);
+                snprintf(title, sizeof(title), "SPR STL Viewer [%s] [FPS: %d] [Render: %.2f ms]", 
+                    get_shader_name(current_shader), current_fps, current_render_ms);
                 SDL_SetWindowTitle(window, title);
+            } else {
+                SDL_SetWindowTitle(window, "SPR STL Viewer");
             }
         }
     }
