@@ -3,6 +3,10 @@
 #include <string.h>
 #include <math.h>
 
+#if defined(__SSE2__)
+#include <immintrin.h>
+#endif
+
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
 #endif
@@ -413,7 +417,7 @@ void spr_draw_triangle_simple(spr_context_t* ctx, vec3_t v0, vec3_t v1, vec3_t v
 
 static void spr_rasterize_triangle(spr_context_t* ctx, const spr_vertex_out_t* v0, const spr_vertex_out_t* v1, const spr_vertex_out_t* v2) {
     int min_x, min_y, max_x, max_y;
-    int x, y;
+    int y;
     float area;
     int width, height;
     
@@ -421,46 +425,177 @@ static void spr_rasterize_triangle(spr_context_t* ctx, const spr_vertex_out_t* v
     width = ctx->fb.width;
     height = ctx->fb.height;
 
-    min_x = (int)spr_min3(v0->position.x, v1->position.x, v2->position.x);
-    min_y = (int)spr_min3(v0->position.y, v1->position.y, v2->position.y);
-    max_x = (int)spr_max3(v0->position.x, v1->position.x, v2->position.x);
-    max_y = (int)spr_max3(v0->position.y, v1->position.y, v2->position.y);
+    /* Extract coordinates for cleaner access */
+    float v0x = v0->position.x; float v0y = v0->position.y;
+    float v1x = v1->position.x; float v1y = v1->position.y;
+    float v2x = v2->position.x; float v2y = v2->position.y;
+
+    min_x = (int)spr_min3(v0x, v1x, v2x);
+    min_y = (int)spr_min3(v0y, v1y, v2y);
+    max_x = (int)spr_max3(v0x, v1x, v2x);
+    max_y = (int)spr_max3(v0y, v1y, v2y);
 
     if (min_x < 0) min_x = 0;
     if (min_y < 0) min_y = 0;
     if (max_x >= width) max_x = width - 1;
     if (max_y >= height) max_y = height - 1;
 
-    vec2_t p0 = {v0->position.x, v0->position.y};
-    vec2_t p1 = {v1->position.x, v1->position.y};
-    vec2_t p2 = {v2->position.x, v2->position.y};
+    vec2_t p0 = {v0x, v0y};
+    vec2_t p1 = {v1x, v1y};
+    vec2_t p2 = {v2x, v2y};
 
     area = edge_function(p0, p1, p2);
     if (fabs(area) < 0.0001f) return;
     
     float one_over_area = 1.0f / area;
 
-    for (y = min_y; y <= max_y; ++y) {
-        for (x = min_x; x <= max_x; ++x) {
-            vec2_t p;
-            float w0, w1, w2;
-            
-            p.x = (float)x + 0.5f;
-            p.y = (float)y + 0.5f;
+    /* Incremental Steps */
+    float step_x_w0 = v2y - v1y;
+    float step_y_w0 = v1x - v2x;
+    
+    float step_x_w1 = v0y - v2y;
+    float step_y_w1 = v2x - v0x;
+    
+    float step_x_w2 = v1y - v0y;
+    float step_y_w2 = v0x - v1x;
 
-            w0 = edge_function(p1, p2, p);
-            w1 = edge_function(p2, p0, p);
-            w2 = edge_function(p0, p1, p);
+    /* Initial values at top-left of bounding box */
+    vec2_t start_p;
+    start_p.x = (float)min_x + 0.5f;
+    start_p.y = (float)min_y + 0.5f;
+    
+    float row_w0 = edge_function(p1, p2, start_p);
+    float row_w1 = edge_function(p2, p0, start_p);
+    float row_w2 = edge_function(p0, p1, start_p);
+
+    /* Normalize winding so we always check w >= 0 */
+    if (area < 0) {
+        area = -area;
+        one_over_area = -one_over_area; // w is negative, area is negative -> w/area is positive match
+        
+        row_w0 = -row_w0;
+        step_x_w0 = -step_x_w0;
+        step_y_w0 = -step_y_w0;
+        
+        row_w1 = -row_w1;
+        step_x_w1 = -step_x_w1;
+        step_y_w1 = -step_y_w1;
+        
+        row_w2 = -row_w2;
+        step_x_w2 = -step_x_w2;
+        step_y_w2 = -step_y_w2;
+    }
+
+#if defined(__SSE2__)
+    __m128 v_step_x_w0 = _mm_set1_ps(step_x_w0);
+    __m128 v_step_x_w1 = _mm_set1_ps(step_x_w1);
+    __m128 v_step_x_w2 = _mm_set1_ps(step_x_w2);
+    
+    __m128 v_step_x_w0_4 = _mm_mul_ps(v_step_x_w0, _mm_set1_ps(4.0f));
+    __m128 v_step_x_w1_4 = _mm_mul_ps(v_step_x_w1, _mm_set1_ps(4.0f));
+    __m128 v_step_x_w2_4 = _mm_mul_ps(v_step_x_w2, _mm_set1_ps(4.0f));
+
+    __m128 v_off_w0 = _mm_mul_ps(_mm_set_ps(3,2,1,0), v_step_x_w0);
+    __m128 v_off_w1 = _mm_mul_ps(_mm_set_ps(3,2,1,0), v_step_x_w1);
+    __m128 v_off_w2 = _mm_mul_ps(_mm_set_ps(3,2,1,0), v_step_x_w2);
+    
+    __m128 zero = _mm_setzero_ps();
+#endif
+
+    for (y = min_y; y <= max_y; ++y) {
+        float w0 = row_w0;
+        float w1 = row_w1;
+        float w2 = row_w2;
+        int x = min_x;
+
+#if defined(__SSE2__)
+        __m128 v_w0 = _mm_add_ps(_mm_set1_ps(w0), v_off_w0);
+        __m128 v_w1 = _mm_add_ps(_mm_set1_ps(w1), v_off_w1);
+        __m128 v_w2 = _mm_add_ps(_mm_set1_ps(w2), v_off_w2);
+        
+        int x_end_simd = min_x + ((max_x - min_x + 1) & ~3);
+        
+        for (; x < x_end_simd; x += 4) {
+            __m128 mask = _mm_and_ps(_mm_cmpge_ps(v_w0, zero),
+                          _mm_and_ps(_mm_cmpge_ps(v_w1, zero),
+                                     _mm_cmpge_ps(v_w2, zero)));
             
-            /* Check if inside (consistent winding) */
-            int inside = (area > 0) ? (w0 >= 0 && w1 >= 0 && w2 >= 0) : (w0 <= 0 && w1 <= 0 && w2 <= 0);
-            
-            if (inside) {
+            int m = _mm_movemask_ps(mask);
+            if (m) {
+                float w0s[4], w1s[4], w2s[4];
+                _mm_storeu_ps(w0s, v_w0);
+                _mm_storeu_ps(w1s, v_w1);
+                _mm_storeu_ps(w2s, v_w2);
+                
+                for (int i=0; i<4; ++i) {
+                    if (m & (1 << i)) {
+                        int px = x + i;
+                        /* Scalar fallback for pixel processing inside SIMD loop */
+                        float lw0 = w0s[i]; float lw1 = w1s[i]; float lw2 = w2s[i];
+                        
+                        float alpha = lw0 * one_over_area;
+                        float beta = lw1 * one_over_area;
+                        float gamma = lw2 * one_over_area;
+                        
+                        float inv_w0 = v0->position.w;
+                        float inv_w1 = v1->position.w;
+                        float inv_w2 = v2->position.w;
+                        
+                        float w_recip = alpha * inv_w0 + beta * inv_w1 + gamma * inv_w2;
+                        float w_final = 1.0f / w_recip;
+                        
+                        float z = (v0->position.z * inv_w0 * alpha + v1->position.z * inv_w1 * beta + v2->position.z * inv_w2 * gamma) * w_final;
+                        
+                        int idx = y * width + px;
+                        if (z < ctx->fb.depth_buffer[idx] && z >= 0.0f && z <= 1.0f) {
+                            ctx->fb.depth_buffer[idx] = z;
+                            
+                            spr_vertex_out_t interp;
+                            interp.position.x = (float)px + 0.5f;
+                            interp.position.y = (float)y + 0.5f;
+                            interp.position.z = z;
+                            interp.position.w = w_final;
+                            
+                            interp.color.x = (v0->color.x * inv_w0 * alpha + v1->color.x * inv_w1 * beta + v2->color.x * inv_w2 * gamma) * w_final;
+                            interp.color.y = (v0->color.y * inv_w0 * alpha + v1->color.y * inv_w1 * beta + v2->color.y * inv_w2 * gamma) * w_final;
+                            interp.color.z = (v0->color.z * inv_w0 * alpha + v1->color.z * inv_w1 * beta + v2->color.z * inv_w2 * gamma) * w_final;
+                            interp.color.w = (v0->color.w * inv_w0 * alpha + v1->color.w * inv_w1 * beta + v2->color.w * inv_w2 * gamma) * w_final;
+
+                            interp.uv.x = (v0->uv.x * inv_w0 * alpha + v1->uv.x * inv_w1 * beta + v2->uv.x * inv_w2 * gamma) * w_final;
+                            interp.uv.y = (v0->uv.y * inv_w0 * alpha + v1->uv.y * inv_w1 * beta + v2->uv.y * inv_w2 * gamma) * w_final;
+
+                            interp.normal.x = (v0->normal.x * inv_w0 * alpha + v1->normal.x * inv_w1 * beta + v2->normal.x * inv_w2 * gamma) * w_final;
+                            interp.normal.y = (v0->normal.y * inv_w0 * alpha + v1->normal.y * inv_w1 * beta + v2->normal.y * inv_w2 * gamma) * w_final;
+                            interp.normal.z = (v0->normal.z * inv_w0 * alpha + v1->normal.z * inv_w1 * beta + v2->normal.z * inv_w2 * gamma) * w_final;
+
+                            spr_color_t c = ctx->current_fs(ctx->current_uniforms, &interp);
+                            ctx->fb.color_buffer[idx] = spr_make_color(c.r, c.g, c.b, c.a);
+                        }
+                    }
+                }
+            }
+            v_w0 = _mm_add_ps(v_w0, v_step_x_w0_4);
+            v_w1 = _mm_add_ps(v_w1, v_step_x_w1_4);
+            v_w2 = _mm_add_ps(v_w2, v_step_x_w2_4);
+        }
+        
+        /* Update scalar w0 to match where SIMD left off for the tail loop */
+        /* w0 = row_w0 + (x - min_x) * step_x_w0 */
+        if (x < max_x + 1) {
+            float offset = (float)(x - min_x);
+            w0 = row_w0 + offset * step_x_w0;
+            w1 = row_w1 + offset * step_x_w1;
+            w2 = row_w2 + offset * step_x_w2;
+        }
+#endif
+
+        for (; x <= max_x; ++x) {
+            /* Scalar Loop (Tail or Full if no SIMD) */
+            if (w0 >= 0 && w1 >= 0 && w2 >= 0) {
                 float alpha = w0 * one_over_area;
                 float beta = w1 * one_over_area;
                 float gamma = w2 * one_over_area;
                 
-                /* Perspective Correction */
                 float inv_w0 = v0->position.w;
                 float inv_w1 = v1->position.w;
                 float inv_w2 = v2->position.w;
@@ -468,31 +603,26 @@ static void spr_rasterize_triangle(spr_context_t* ctx, const spr_vertex_out_t* v
                 float w_recip = alpha * inv_w0 + beta * inv_w1 + gamma * inv_w2;
                 float w_final = 1.0f / w_recip;
                 
-                /* Interpolate Z */
                 float z = (v0->position.z * inv_w0 * alpha + v1->position.z * inv_w1 * beta + v2->position.z * inv_w2 * gamma) * w_final;
                 
-                /* Depth Test */
                 int idx = y * width + x;
                 if (z < ctx->fb.depth_buffer[idx] && z >= 0.0f && z <= 1.0f) {
                     ctx->fb.depth_buffer[idx] = z;
                     
                     spr_vertex_out_t interp;
-                    interp.position.x = p.x;
-                    interp.position.y = p.y;
+                    interp.position.x = (float)x + 0.5f;
+                    interp.position.y = (float)y + 0.5f;
                     interp.position.z = z;
                     interp.position.w = w_final;
                     
-                    /* Color */
                     interp.color.x = (v0->color.x * inv_w0 * alpha + v1->color.x * inv_w1 * beta + v2->color.x * inv_w2 * gamma) * w_final;
                     interp.color.y = (v0->color.y * inv_w0 * alpha + v1->color.y * inv_w1 * beta + v2->color.y * inv_w2 * gamma) * w_final;
                     interp.color.z = (v0->color.z * inv_w0 * alpha + v1->color.z * inv_w1 * beta + v2->color.z * inv_w2 * gamma) * w_final;
                     interp.color.w = (v0->color.w * inv_w0 * alpha + v1->color.w * inv_w1 * beta + v2->color.w * inv_w2 * gamma) * w_final;
 
-                    /* UV */
                     interp.uv.x = (v0->uv.x * inv_w0 * alpha + v1->uv.x * inv_w1 * beta + v2->uv.x * inv_w2 * gamma) * w_final;
                     interp.uv.y = (v0->uv.y * inv_w0 * alpha + v1->uv.y * inv_w1 * beta + v2->uv.y * inv_w2 * gamma) * w_final;
 
-                    /* Normal */
                     interp.normal.x = (v0->normal.x * inv_w0 * alpha + v1->normal.x * inv_w1 * beta + v2->normal.x * inv_w2 * gamma) * w_final;
                     interp.normal.y = (v0->normal.y * inv_w0 * alpha + v1->normal.y * inv_w1 * beta + v2->normal.y * inv_w2 * gamma) * w_final;
                     interp.normal.z = (v0->normal.z * inv_w0 * alpha + v1->normal.z * inv_w1 * beta + v2->normal.z * inv_w2 * gamma) * w_final;
@@ -501,7 +631,13 @@ static void spr_rasterize_triangle(spr_context_t* ctx, const spr_vertex_out_t* v
                     ctx->fb.color_buffer[idx] = spr_make_color(c.r, c.g, c.b, c.a);
                 }
             }
+            w0 += step_x_w0;
+            w1 += step_x_w1;
+            w2 += step_x_w2;
         }
+        row_w0 += step_y_w0;
+        row_w1 += step_y_w1;
+        row_w2 += step_y_w2;
     }
 }
 
