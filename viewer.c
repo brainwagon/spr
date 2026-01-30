@@ -17,19 +17,13 @@ typedef struct {
     float distance;
     float pan_x;
     float pan_y;
+    float light_rot_x;
+    float light_rot_y;
     int mouse_down_left;
     int mouse_down_right;
     int last_mouse_x;
     int last_mouse_y;
 } view_state_t;
-
-/* --- Math Helpers --- */
-static float sh_dot(vec3_t a, vec3_t b) { return a.x*b.x + a.y*b.y + a.z*b.z; }
-static vec3_t sh_normalize(vec3_t v) {
-    float len = sqrtf(sh_dot(v, v));
-    if (len > 0) { v.x/=len; v.y/=len; v.z/=len; }
-    return v;
-}
 
 /* Shader Enum */
 typedef enum {
@@ -136,6 +130,9 @@ int main(int argc, char* argv[]) {
     view.rot_y = 0.0f;
     view.pan_x = 0.0f;
     view.pan_y = 0.0f;
+    /* Initial light direction (roughly 0.5, 1.0, 1.0) */
+    view.light_rot_x = 45.0f;
+    view.light_rot_y = 30.0f;
     
     shader_type_t current_shader = SHADER_PLASTIC;
     
@@ -165,8 +162,6 @@ int main(int argc, char* argv[]) {
                     case SDLK_3: current_shader = SHADER_PLASTIC; break;
                     case SDLK_4: current_shader = SHADER_METAL; break;
                 }
-                
-                /* Immediate title update if paused logic existed, but we redraw anyway */
             }
             else if (e.type == SDL_MOUSEBUTTONDOWN) {
                 if (e.button.button == SDL_BUTTON_LEFT) view.mouse_down_left = 1;
@@ -185,8 +180,15 @@ int main(int argc, char* argv[]) {
                 view.last_mouse_y = e.motion.y;
                 
                 if (view.mouse_down_left) {
-                    view.rot_y += dx * 0.5f;
-                    view.rot_x += dy * 0.5f;
+                    if (SDL_GetModState() & KMOD_SHIFT) {
+                        /* Rotate Light */
+                        view.light_rot_y += dx * 0.5f;
+                        view.light_rot_x += dy * 0.5f;
+                    } else {
+                        /* Rotate Camera */
+                        view.rot_y += dx * 0.5f;
+                        view.rot_x += dy * 0.5f;
+                    }
                 }
                 if (view.mouse_down_right) {
                     view.pan_x += dx * (size * 0.002f);
@@ -228,36 +230,42 @@ int main(int argc, char* argv[]) {
         spr_shader_uniforms_t u;
         u.mvp = spr_mat4_mul(spr_get_projection_matrix(ctx), spr_get_modelview_matrix(ctx));
         u.model = spr_get_modelview_matrix(ctx);
-                u.light_dir = (vec3_t){0.5f, 1.0f, 1.0f}; 
-                u.light_dir = sh_normalize(u.light_dir);
-                u.eye_pos = eye; 
-                
-                if (color_mode == 0) {
-                    spr_uniforms_set_color(&u, 0.7f, 0.7f, 0.7f, 1.0f); /* Grey */
-                } else {
-                    spr_uniforms_set_color(&u, 0.8f, 0.2f, 0.2f, 1.0f); /* Red */
-                }
-                
-                u.roughness = 32.0f;
         
-                switch (current_shader) {
-                    case SHADER_CONSTANT:
-                        spr_set_program(ctx, spr_shader_constant_vs, spr_shader_constant_fs, &u);
-                        break;
-                    case SHADER_MATTE:
-                        spr_set_program(ctx, spr_shader_matte_vs, spr_shader_matte_fs, &u);
-                        break;
-                    case SHADER_PLASTIC:
-                        spr_set_program(ctx, spr_shader_plastic_vs, spr_shader_plastic_fs, &u);
-                        break;
-                    case SHADER_METAL:
-                        if (color_mode == 0) {
-                            spr_uniforms_set_color(&u, 0.95f, 0.85f, 0.5f, 1.0f); /* Gold override */
-                        }
-                        u.roughness = 64.0f;
-                        spr_set_program(ctx, spr_shader_metal_vs, spr_shader_metal_fs, &u);
-                        break;
-                }        
+        /* Calculate light direction from rotations */
+        float lx = sinf(view.light_rot_y * (float)M_PI / 180.0f) * cosf(view.light_rot_x * (float)M_PI / 180.0f);
+        float ly = sinf(view.light_rot_x * (float)M_PI / 180.0f);
+        float lz = cosf(view.light_rot_y * (float)M_PI / 180.0f) * cosf(view.light_rot_x * (float)M_PI / 180.0f);
+        spr_uniforms_set_light_dir(&u, lx, ly, lz);
+        
+        u.eye_pos = eye; 
+        
+        if (color_mode == 0) {
+            spr_uniforms_set_color(&u, 0.7f, 0.7f, 0.7f, 1.0f); /* Grey */
+        } else {
+            spr_uniforms_set_color(&u, 0.8f, 0.2f, 0.2f, 1.0f); /* Red */
+        }
+        
+        u.roughness = 32.0f;
+
+        switch (current_shader) {
+            case SHADER_CONSTANT:
+                spr_set_program(ctx, spr_shader_constant_vs, spr_shader_constant_fs, &u);
+                break;
+            case SHADER_MATTE:
+                spr_set_program(ctx, spr_shader_matte_vs, spr_shader_matte_fs, &u);
+                break;
+            case SHADER_PLASTIC:
+                spr_set_program(ctx, spr_shader_plastic_vs, spr_shader_plastic_fs, &u);
+                break;
+            case SHADER_METAL:
+                if (color_mode == 0) {
+                    spr_uniforms_set_color(&u, 0.95f, 0.85f, 0.5f, 1.0f); /* Gold override */
+                }
+                u.roughness = 64.0f;
+                spr_set_program(ctx, spr_shader_metal_vs, spr_shader_metal_fs, &u);
+                break;
+        }
+        
         /* Draw */
         spr_draw_triangles(ctx, mesh->vertex_count / 3, mesh->vertices, sizeof(stl_vertex_t));
         
