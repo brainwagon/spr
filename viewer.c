@@ -197,7 +197,10 @@ int main(int argc, char* argv[]) {
     int show_fps = 1; /* Default ON */
     int frame_count = 0;
     int current_fps = 0;
+    double current_render_ms = 0.0;
+    double accumulated_render_ms = 0.0;
     uint32_t last_time = SDL_GetTicks();
+    uint64_t perf_freq = SDL_GetPerformanceFrequency();
 
     /* Main Loop */
     int running = 1;
@@ -211,8 +214,8 @@ int main(int argc, char* argv[]) {
                     if (!show_fps) {
                         SDL_SetWindowTitle(window, "SPR STL Viewer");
                     } else {
-                        char title[64];
-                        snprintf(title, sizeof(title), "SPR STL Viewer [FPS: %d]", current_fps);
+                        char title[128];
+                        snprintf(title, sizeof(title), "SPR STL Viewer [FPS: %d] [Render: %.2f ms]", current_fps, current_render_ms);
                         SDL_SetWindowTitle(window, title);
                     }
                 }
@@ -249,6 +252,8 @@ int main(int argc, char* argv[]) {
         }
         
         /* Render SPR */
+        uint64_t start_time = SDL_GetPerformanceCounter();
+
         uint32_t clear_col = spr_make_color(30, 30, 30, 255);
         spr_clear(ctx, clear_col, 1.0f);
         
@@ -283,6 +288,9 @@ int main(int argc, char* argv[]) {
         /* Draw */
         spr_draw_triangles(ctx, mesh->vertex_count / 3, mesh->vertices, sizeof(stl_vertex_t));
         
+        uint64_t end_time = SDL_GetPerformanceCounter();
+        accumulated_render_ms += (double)((end_time - start_time) * 1000) / perf_freq;
+
         /* Update SDL */
         void* pixels;
         int pitch;
@@ -298,11 +306,13 @@ int main(int argc, char* argv[]) {
         frame_count++;
         if (SDL_GetTicks() - last_time >= 1000) {
             current_fps = frame_count;
+            current_render_ms = accumulated_render_ms / frame_count;
             frame_count = 0;
+            accumulated_render_ms = 0.0;
             last_time = SDL_GetTicks();
             if (show_fps) {
-                char title[64];
-                snprintf(title, sizeof(title), "SPR STL Viewer [FPS: %d]", current_fps);
+                char title[128];
+                snprintf(title, sizeof(title), "SPR STL Viewer [FPS: %d] [Render: %.2f ms]", current_fps, current_render_ms);
                 SDL_SetWindowTitle(window, title);
             }
         }

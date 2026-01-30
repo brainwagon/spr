@@ -92,6 +92,10 @@ vec4_t spr_mat4_mul_vec4(mat4_t m, vec4_t v) {
     return r;
 }
 
+uint32_t spr_make_color(uint8_t r, uint8_t g, uint8_t b, uint8_t a) {
+    return (a << 24) | (b << 16) | (g << 8) | r;
+}
+
 static float spr_min3(float a, float b, float c) {
     float m = a;
     if (b < m) m = b;
@@ -108,10 +112,6 @@ static float spr_max3(float a, float b, float c) {
 
 static float edge_function(vec2_t a, vec2_t b, vec2_t c) {
     return (c.x - a.x) * (b.y - a.y) - (c.y - a.y) * (b.x - a.x);
-}
-
-uint32_t spr_make_color(uint8_t r, uint8_t g, uint8_t b, uint8_t a) {
-    return (a << 24) | (b << 16) | (g << 8) | r;
 }
 
 void spr_draw_triangle_2d_flat(spr_context_t* ctx, vec2_t v0, vec2_t v1, vec2_t v2, uint32_t color) {
@@ -770,7 +770,7 @@ void spr_draw_triangle_simple(spr_context_t* ctx, vec3_t v0, vec3_t v1, vec3_t v
 }
 
 void spr_draw_triangles(spr_context_t* ctx, int count, const void* vertices, size_t stride) {
-    if (!ctx || !ctx->current_vs || !ctx->current_fs || !ctx->rasterizer_func) return;
+    if (!ctx || !ctx->current_vs || !ctx->current_fs || !ctx->rasterizer_func) return; 
     
     int i;
     const uint8_t* v_ptr = (const uint8_t*)vertices;
@@ -782,7 +782,7 @@ void spr_draw_triangles(spr_context_t* ctx, int count, const void* vertices, siz
         ctx->current_vs(ctx->current_uniforms, v_ptr, &v1); v_ptr += stride;
         ctx->current_vs(ctx->current_uniforms, v_ptr, &v2); v_ptr += stride;
         
-        if (v0.position.w <= 0.001f || v1.position.w <= 0.001f || v2.position.w <= 0.001f) continue;
+        if (v0.position.w <= 0.001f || v1.position.w <= 0.001f || v2.position.w <= 0.001f) continue; 
         
         float inv_w0 = 1.0f / v0.position.w;
         float inv_w1 = 1.0f / v1.position.w;
