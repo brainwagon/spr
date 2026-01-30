@@ -98,6 +98,9 @@ void spr_draw_triangles(spr_context_t* ctx, int count, const void* vertices, siz
 /* Framebuffer Resolve (A-Buffer) */
 void spr_resolve(spr_context_t* ctx);
 
+/* Culling */
+void spr_enable_cull_face(spr_context_t* ctx, int enable);
+
 /* Primitive Drawing (Phase 2 testing) - Keeping for debug/internal */
 void spr_draw_triangle_2d_flat(spr_context_t* ctx, vec2_t v0, vec2_t v1, vec2_t v2, uint32_t color);
 

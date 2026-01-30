@@ -46,6 +46,8 @@ struct spr_context_t {
     spr_fragment_t* fragment_pool;   /* Huge array of nodes */
     size_t pool_capacity;
     size_t pool_cursor;
+
+    int cull_backface;
 };
 
 /* --- Matrix Math Helpers --- */
@@ -210,6 +212,7 @@ static void spr_rasterize_triangle_cpu(spr_context_t* ctx, const spr_vertex_out_
     vec2_t p2 = {v2x, v2y};
 
     area = edge_function(p0, p1, p2);
+    if (ctx->cull_backface && area < 0) return;
     if (fabs(area) < 0.0001f) return;
     
     float one_over_area = 1.0f / area;
@@ -316,6 +319,7 @@ static void spr_rasterize_triangle_simd(spr_context_t* ctx, const spr_vertex_out
     vec2_t p2 = {v2x, v2y};
 
     area = edge_function(p0, p1, p2);
+    if (ctx->cull_backface && area < 0) return;
     if (fabs(area) < 0.0001f) return;
     
     float one_over_area = 1.0f / area;
@@ -530,8 +534,13 @@ spr_context_t* spr_init(int width, int height) {
 
     /* Default to CPU */
     ctx->rasterizer_func = spr_rasterize_triangle_cpu;
+    ctx->cull_backface = 0;
 
     return ctx;
+}
+
+void spr_enable_cull_face(spr_context_t* ctx, int enable) {
+    if (ctx) ctx->cull_backface = enable;
 }
 
 void spr_set_rasterizer_mode(spr_context_t* ctx, spr_rasterizer_mode_t mode) {

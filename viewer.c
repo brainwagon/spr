@@ -141,6 +141,7 @@ int main(int argc, char* argv[]) {
     int current_fps = 0;
     int color_mode = 0; /* 0: Grey, 1: Red */
     int opacity_mode = 0; /* 0: Opaque, 1: Transparent (0.5) */
+    int cull_mode = 0; /* 0: None, 1: Backface */
     double current_render_ms = 0.0;
     double accumulated_render_ms = 0.0;
     uint32_t last_time = SDL_GetTicks();
@@ -158,6 +159,7 @@ int main(int argc, char* argv[]) {
                     case SDLK_f: show_fps = !show_fps; break;
                     case SDLK_c: color_mode = !color_mode; break;
                     case SDLK_o: opacity_mode = !opacity_mode; break;
+                    case SDLK_b: cull_mode = !cull_mode; break;
                     case SDLK_1: current_shader = SHADER_CONSTANT; break;
                     case SDLK_2: current_shader = SHADER_MATTE; break;
                     case SDLK_3: current_shader = SHADER_PLASTIC; break;
@@ -182,11 +184,9 @@ int main(int argc, char* argv[]) {
                 
                 if (view.mouse_down_left) {
                     if (SDL_GetModState() & KMOD_SHIFT) {
-                        /* Rotate Light */
                         view.light_rot_y += dx * 0.5f;
                         view.light_rot_x += dy * 0.5f;
                     } else {
-                        /* Rotate Camera */
                         view.rot_y += dx * 0.5f;
                         view.rot_x += dy * 0.5f;
                     }
@@ -272,6 +272,9 @@ int main(int argc, char* argv[]) {
                 break;
         }
         
+        /* Culling */
+        spr_enable_cull_face(ctx, cull_mode);
+
         /* Draw */
         spr_draw_triangles(ctx, mesh->vertex_count / 3, mesh->vertices, sizeof(stl_vertex_t));
         
@@ -302,8 +305,8 @@ int main(int argc, char* argv[]) {
             last_time = SDL_GetTicks();
             if (show_fps) {
                 char title[128];
-                snprintf(title, sizeof(title), "SPR STL Viewer [%s] [FPS: %d] [Render: %.2f ms]", 
-                    get_shader_name(current_shader), current_fps, current_render_ms);
+                snprintf(title, sizeof(title), "SPR STL Viewer [%s] [FPS: %d] [Render: %.2f ms] [Cull: %s]", 
+                    get_shader_name(current_shader), current_fps, current_render_ms, cull_mode ? "ON" : "OFF");
                 SDL_SetWindowTitle(window, title);
             } else {
                 SDL_SetWindowTitle(window, "SPR STL Viewer");

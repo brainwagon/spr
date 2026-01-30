@@ -55,6 +55,7 @@ make test_spr
 *   **'f' Key**: Toggle FPS and Render Time display
 *   **'o' Key**: Toggle Transparency (Opaque / Translucent)
 *   **'c' Key**: Toggle Base Color (Grey / Red)
+*   **'b' Key**: Toggle Back-face Culling
 *   **1-4 Keys**: Switch Shaders (Constant, Matte, Plastic, Metal)
 
 ## Project Structure
