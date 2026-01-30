@@ -1,5 +1,7 @@
 # Simple Polygon Renderer (SPR) & STL Viewer
 
+![Benchy](benchy.png)
+
 A minimalist, single-file C library for software-based 3D rendering, accompanied by a fully functional interactive STL viewer.
 
 ## Features
