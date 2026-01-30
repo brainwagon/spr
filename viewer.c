@@ -3,6 +3,7 @@
 #include "stl.h"
 #include <stdio.h>
 #include <math.h>
+#include <string.h>
 
 /* --- Window Settings --- */
 #define WINDOW_WIDTH 800
@@ -59,10 +60,6 @@ void plastic_vs(void* user_data, const void* input_vertex, spr_vertex_out_t* out
     n4 = spr_mat4_mul_vec4(u->model, n4);
     
     out->normal.x = n4.x; out->normal.y = n4.y; out->normal.z = n4.z;
-    
-    /* Position in World Space (for specular) - approximate using ModelView or just Model */
-    /* Let's pass World Position if needed, but for simple viewer, view-space calculation is common. */
-    /* Here we compute lighting in World Space. */
 }
 
 /* --- Fragment Shader --- */
@@ -80,23 +77,8 @@ spr_color_t plastic_fs(void* user_data, const spr_vertex_out_t* interpolated) {
     float amb = 0.2f;
     
     /* Specular (Phong) */
-    /* View Vector (assuming eye is at 0,0,dist in View space, but we are in World space here?) */
-    /* Actually, we didn't pass world pos. Let's assume directional light + simplified view. */
-    /* Or just standard Blinn-Phong. */
     float spec = 0.0f;
     if (diff > 0) {
-        /* Simple view vector approximation: Eye is "in front" */
-        /* Better: pass eye_pos in uniforms. */
-        /* But we need pixel position to compute V properly. */
-        /* For "Simple Plastic", let's just do Diffuse + Constant Specular Highlight based on Normal? */
-        /* Or just Gouraud shading (Vertex Shader) if we want speed? */
-        /* Let's try proper per-pixel. */
-        /* Wait, I didn't interpolate WorldPos. */
-        /* Let's use Half-Vector H = (L + V) / |L + V| */
-        /* Assume View Vector V is roughly -LightDir for a "headlight" or fixed camera? */
-        /* Let's assume V is (0, 0, 1) in view space. */
-        /* Too complex for 3 lines. Let's stick to simple Diffuse + Ambient + hardcoded Specular direction. */
-        
         vec3_t V = {0.0f, 0.0f, 1.0f}; /* Approximate view direction */
         vec3_t R = reflect((vec3_t){-L.x, -L.y, -L.z}, N);
         float s = dot(R, V);
@@ -125,13 +107,38 @@ spr_color_t plastic_fs(void* user_data, const spr_vertex_out_t* interpolated) {
 
 int main(int argc, char* argv[]) {
     if (argc < 2) {
-        printf("Usage: %s <stl_file>\n", argv[0]);
+        printf("Usage: %s <stl_file> [-simd | -cpu]\n", argv[0]);
         return 1;
     }
 
+    const char* filename = NULL;
+    spr_rasterizer_mode_t mode = SPR_RASTERIZER_CPU; /* Default to CPU */
+
+    /* Parse Args */
+    for (int i = 1; i < argc; ++i) {
+        if (strcmp(argv[i], "-simd") == 0) {
+            mode = SPR_RASTERIZER_SIMD;
+        } else if (strcmp(argv[i], "-cpu") == 0) {
+            mode = SPR_RASTERIZER_CPU;
+        } else if (argv[i][0] != '-') {
+            filename = argv[i];
+        }
+    }
+
+    if (!filename) {
+        printf("Error: No STL file specified.\n");
+        return 1;
+    }
+
+    if (mode == SPR_RASTERIZER_SIMD) {
+        printf("Mode: SIMD (if available)\n");
+    } else {
+        printf("Mode: CPU\n");
+    }
+
     /* Load STL */
-    printf("Loading %s...\n", argv[1]);
-    stl_object_t* mesh = stl_load(argv[1]);
+    printf("Loading %s...\n", filename);
+    stl_object_t* mesh = stl_load(filename);
     if (!mesh) {
         printf("Failed to load mesh.\n");
         return 1;
@@ -176,6 +183,7 @@ int main(int argc, char* argv[]) {
 
     /* Init SPR */
     spr_context_t* ctx = spr_init(WINDOW_WIDTH, WINDOW_HEIGHT);
+    spr_set_rasterizer_mode(ctx, mode);
     
     /* View State */
     view_state_t view = {0};
@@ -186,7 +194,7 @@ int main(int argc, char* argv[]) {
     view.pan_y = 0.0f;
     
     /* FPS State */
-    int show_fps = 0;
+    int show_fps = 1; /* Default ON */
     int frame_count = 0;
     int current_fps = 0;
     uint32_t last_time = SDL_GetTicks();

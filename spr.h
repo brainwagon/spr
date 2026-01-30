@@ -80,6 +80,13 @@ mat4_t spr_get_projection_matrix(spr_context_t* ctx);
 /* Shaders */
 void spr_set_program(spr_context_t* ctx, spr_vertex_shader_t vs, spr_fragment_shader_t fs, void* uniform_data);
 
+typedef enum {
+    SPR_RASTERIZER_CPU,
+    SPR_RASTERIZER_SIMD
+} spr_rasterizer_mode_t;
+
+void spr_set_rasterizer_mode(spr_context_t* ctx, spr_rasterizer_mode_t mode);
+
 /* Drawing */
 /* Replaces previous draw calls for general use */
 void spr_draw_triangles(spr_context_t* ctx, int count, const void* vertices, size_t stride);
