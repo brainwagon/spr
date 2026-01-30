@@ -30,12 +30,17 @@ typedef struct {
     vec4_t color;
     vec2_t uv;
     vec3_t normal;
-    float depth; /* Screen space depth (calculated internally usually, but we can store world Z here if we want) */
+    float depth; 
 } spr_vertex_out_t;
+
+typedef struct {
+    vec3_t color;   /* Premultiplied: Base * Opacity */
+    vec3_t opacity; /* Transmission (0=transparent, 1=opaque) */
+} spr_fs_output_t;
 
 /* User Callbacks */
 typedef void (*spr_vertex_shader_t)(void* uniform_data, const void* vertex_in, spr_vertex_out_t* out);
-typedef spr_color_t (*spr_fragment_shader_t)(void* uniform_data, const spr_vertex_out_t* interpolated);
+typedef spr_fs_output_t (*spr_fragment_shader_t)(void* uniform_data, const spr_vertex_out_t* interpolated);
 
 typedef struct {
     int width;
@@ -88,8 +93,10 @@ typedef enum {
 void spr_set_rasterizer_mode(spr_context_t* ctx, spr_rasterizer_mode_t mode);
 
 /* Drawing */
-/* Replaces previous draw calls for general use */
 void spr_draw_triangles(spr_context_t* ctx, int count, const void* vertices, size_t stride);
+
+/* Framebuffer Resolve (A-Buffer) */
+void spr_resolve(spr_context_t* ctx);
 
 /* Primitive Drawing (Phase 2 testing) - Keeping for debug/internal */
 void spr_draw_triangle_2d_flat(spr_context_t* ctx, vec2_t v0, vec2_t v1, vec2_t v2, uint32_t color);

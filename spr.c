@@ -13,6 +13,14 @@
 #endif
 
 #define MAX_MATRIX_STACK 32
+#define FRAGMENTS_PER_PIXEL_AVG 8
+
+typedef struct spr_fragment_t {
+    float z;
+    vec3_t color;
+    vec3_t opacity;
+    struct spr_fragment_t* next;
+} spr_fragment_t;
 
 typedef void (*spr_rasterize_t)(spr_context_t* ctx, const spr_vertex_out_t* v0, const spr_vertex_out_t* v1, const spr_vertex_out_t* v2);
 
@@ -27,13 +35,17 @@ struct spr_context_t {
     
     spr_matrix_mode_enum current_mode;
     
-    /* Shader State */
     spr_vertex_shader_t current_vs;
     spr_fragment_shader_t current_fs;
     void* current_uniforms;
 
-    /* Rasterizer */
     spr_rasterize_t rasterizer_func;
+
+    /* A-Buffer State */
+    spr_fragment_t** fragment_heads; /* Array of pointers [width * height] */
+    spr_fragment_t* fragment_pool;   /* Huge array of nodes */
+    size_t pool_capacity;
+    size_t pool_cursor;
 };
 
 /* --- Matrix Math Helpers --- */
@@ -114,15 +126,33 @@ static float edge_function(vec2_t a, vec2_t b, vec2_t c) {
     return (c.x - a.x) * (b.y - a.y) - (c.y - a.y) * (b.x - a.x);
 }
 
+/* --- Internal Helpers --- */
+static spr_fragment_t* alloc_fragment(spr_context_t* ctx) {
+    if (ctx->pool_cursor >= ctx->pool_capacity) return NULL;
+    return &ctx->fragment_pool[ctx->pool_cursor++];
+}
+
+static void insert_fragment(spr_context_t* ctx, int idx, float z, spr_fs_output_t out) {
+    spr_fragment_t* node = alloc_fragment(ctx);
+    if (!node) return; 
+    
+    node->z = z;
+    node->color = out.color;
+    node->opacity = out.opacity;
+    
+    /* Insert at head (fastest) - sorting happens in resolve */
+    node->next = ctx->fragment_heads[idx];
+    ctx->fragment_heads[idx] = node;
+}
+
 void spr_draw_triangle_2d_flat(spr_context_t* ctx, vec2_t v0, vec2_t v1, vec2_t v2, uint32_t color) {
+    /* Legacy Function: Just draw opaque to buffer for debug */
+    /* Not using A-Buffer here */
     int min_x, min_y, max_x, max_y;
     int x, y;
     float area;
-    int width, height;
-    
-    if (!ctx) return;
-    width = ctx->fb.width;
-    height = ctx->fb.height;
+    int width = ctx->fb.width;
+    int height = ctx->fb.height;
 
     min_x = (int)spr_min3(v0.x, v1.x, v2.x);
     min_y = (int)spr_min3(v0.y, v1.y, v2.y);
@@ -138,30 +168,18 @@ void spr_draw_triangle_2d_flat(spr_context_t* ctx, vec2_t v0, vec2_t v1, vec2_t 
     
     for (y = min_y; y <= max_y; ++y) {
         for (x = min_x; x <= max_x; ++x) {
-            vec2_t p;
-            float w0, w1, w2;
+            vec2_t p; p.x = x + 0.5f; p.y = y + 0.5f;
+            float w0 = edge_function(v1, v2, p);
+            float w1 = edge_function(v2, v0, p);
+            float w2 = edge_function(v0, v1, p);
             
-            p.x = (float)x + 0.5f;
-            p.y = (float)y + 0.5f;
-
-            w0 = edge_function(v1, v2, p);
-            w1 = edge_function(v2, v0, p);
-            w2 = edge_function(v0, v1, p);
-            
-            if (area > 0) {
-                if (w0 >= 0 && w1 >= 0 && w2 >= 0) {
-                    ctx->fb.color_buffer[y * width + x] = color;
-                }
-            } else {
-                 if (w0 <= 0 && w1 <= 0 && w2 <= 0) {
-                    ctx->fb.color_buffer[y * width + x] = color;
-                }
-            }
+            int inside = (area > 0) ? (w0 >= 0 && w1 >= 0 && w2 >= 0) : (w0 <= 0 && w1 <= 0 && w2 <= 0);
+            if (inside) ctx->fb.color_buffer[y * width + x] = color;
         }
     }
 }
 
-/* --- Rasterizers --- */
+/* --- Rasterizers (A-Buffer) --- */
 
 static void spr_rasterize_triangle_cpu(spr_context_t* ctx, const spr_vertex_out_t* v0, const spr_vertex_out_t* v1, const spr_vertex_out_t* v2) {
     int min_x, min_y, max_x, max_y;
@@ -196,29 +214,17 @@ static void spr_rasterize_triangle_cpu(spr_context_t* ctx, const spr_vertex_out_
     
     float one_over_area = 1.0f / area;
 
-    /* Incremental Steps */
-    float step_x_w0 = v2y - v1y;
-    float step_y_w0 = v1x - v2x;
-    
-    float step_x_w1 = v0y - v2y;
-    float step_y_w1 = v2x - v0x;
-    
-    float step_x_w2 = v1y - v0y;
-    float step_y_w2 = v0x - v1x;
+    float step_x_w0 = v2y - v1y; float step_y_w0 = v1x - v2x;
+    float step_x_w1 = v0y - v2y; float step_y_w1 = v2x - v0x;
+    float step_x_w2 = v1y - v0y; float step_y_w2 = v0x - v1x;
 
-    /* Initial values at top-left of bounding box */
-    vec2_t start_p;
-    start_p.x = (float)min_x + 0.5f;
-    start_p.y = (float)min_y + 0.5f;
-    
+    vec2_t start_p; start_p.x = (float)min_x + 0.5f; start_p.y = (float)min_y + 0.5f;
     float row_w0 = edge_function(p1, p2, start_p);
     float row_w1 = edge_function(p2, p0, start_p);
     float row_w2 = edge_function(p0, p1, start_p);
 
-    /* Normalize winding */
     if (area < 0) {
-        area = -area;
-        one_over_area = -one_over_area;
+        area = -area; one_over_area = -one_over_area;
         row_w0 = -row_w0; step_x_w0 = -step_x_w0; step_y_w0 = -step_y_w0;
         row_w1 = -row_w1; step_x_w1 = -step_x_w1; step_y_w1 = -step_y_w1;
         row_w2 = -row_w2; step_x_w2 = -step_x_w2; step_y_w2 = -step_y_w2;
@@ -244,39 +250,39 @@ static void spr_rasterize_triangle_cpu(spr_context_t* ctx, const spr_vertex_out_
                 
                 float z = (v0->position.z * inv_w0 * alpha + v1->position.z * inv_w1 * beta + v2->position.z * inv_w2 * gamma) * w_final;
                 
-                int idx = y * width + x;
-                if (z < ctx->fb.depth_buffer[idx] && z >= 0.0f && z <= 1.0f) {
-                    ctx->fb.depth_buffer[idx] = z;
-                    
+                /* No Depth Test here - Just A-Buffer Insertion */
+                /* Assuming Near/Far clipping happens in vertex stage (partially) */
+                if (z >= 0.0f && z <= 1.0f) {
                     spr_vertex_out_t interp;
                     interp.position.x = (float)x + 0.5f;
                     interp.position.y = (float)y + 0.5f;
                     interp.position.z = z;
                     interp.position.w = w_final;
                     
-                    interp.color.x = (v0->color.x * inv_w0 * alpha + v1->color.x * inv_w1 * beta + v2->color.x * inv_w2 * gamma) * w_final;
-                    interp.color.y = (v0->color.y * inv_w0 * alpha + v1->color.y * inv_w1 * beta + v2->color.y * inv_w2 * gamma) * w_final;
-                    interp.color.z = (v0->color.z * inv_w0 * alpha + v1->color.z * inv_w1 * beta + v2->color.z * inv_w2 * gamma) * w_final;
-                    interp.color.w = (v0->color.w * inv_w0 * alpha + v1->color.w * inv_w1 * beta + v2->color.w * inv_w2 * gamma) * w_final;
+                    /* Interpolate attributes */
+                    float wa = alpha * inv_w0 * w_final;
+                    float wb = beta * inv_w1 * w_final;
+                    float wg = gamma * inv_w2 * w_final;
+                    
+                    interp.color.x = v0->color.x * wa + v1->color.x * wb + v2->color.x * wg;
+                    interp.color.y = v0->color.y * wa + v1->color.y * wb + v2->color.y * wg;
+                    interp.color.z = v0->color.z * wa + v1->color.z * wb + v2->color.z * wg;
+                    interp.color.w = v0->color.w * wa + v1->color.w * wb + v2->color.w * wg;
 
-                    interp.uv.x = (v0->uv.x * inv_w0 * alpha + v1->uv.x * inv_w1 * beta + v2->uv.x * inv_w2 * gamma) * w_final;
-                    interp.uv.y = (v0->uv.y * inv_w0 * alpha + v1->uv.y * inv_w1 * beta + v2->uv.y * inv_w2 * gamma) * w_final;
+                    interp.uv.x = v0->uv.x * wa + v1->uv.x * wb + v2->uv.x * wg;
+                    interp.uv.y = v0->uv.y * wa + v1->uv.y * wb + v2->uv.y * wg;
 
-                    interp.normal.x = (v0->normal.x * inv_w0 * alpha + v1->normal.x * inv_w1 * beta + v2->normal.x * inv_w2 * gamma) * w_final;
-                    interp.normal.y = (v0->normal.y * inv_w0 * alpha + v1->normal.y * inv_w1 * beta + v2->normal.y * inv_w2 * gamma) * w_final;
-                    interp.normal.z = (v0->normal.z * inv_w0 * alpha + v1->normal.z * inv_w1 * beta + v2->normal.z * inv_w2 * gamma) * w_final;
+                    interp.normal.x = v0->normal.x * wa + v1->normal.x * wb + v2->normal.x * wg;
+                    interp.normal.y = v0->normal.y * wa + v1->normal.y * wb + v2->normal.y * wg;
+                    interp.normal.z = v0->normal.z * wa + v1->normal.z * wb + v2->normal.z * wg;
 
-                    spr_color_t c = ctx->current_fs(ctx->current_uniforms, &interp);
-                    ctx->fb.color_buffer[idx] = spr_make_color(c.r, c.g, c.b, c.a);
+                    spr_fs_output_t out = ctx->current_fs(ctx->current_uniforms, &interp);
+                    insert_fragment(ctx, y * width + x, z, out);
                 }
             }
-            w0 += step_x_w0;
-            w1 += step_x_w1;
-            w2 += step_x_w2;
+            w0 += step_x_w0; w1 += step_x_w1; w2 += step_x_w2;
         }
-        row_w0 += step_y_w0;
-        row_w1 += step_y_w1;
-        row_w2 += step_y_w2;
+        row_w0 += step_y_w0; row_w1 += step_y_w1; row_w2 += step_y_w2;
     }
 }
 
@@ -291,7 +297,6 @@ static void spr_rasterize_triangle_simd(spr_context_t* ctx, const spr_vertex_out
     width = ctx->fb.width;
     height = ctx->fb.height;
 
-    /* Extract coordinates for cleaner access */
     float v0x = v0->position.x; float v0y = v0->position.y;
     float v1x = v1->position.x; float v1y = v1->position.y;
     float v2x = v2->position.x; float v2y = v2->position.y;
@@ -315,29 +320,17 @@ static void spr_rasterize_triangle_simd(spr_context_t* ctx, const spr_vertex_out
     
     float one_over_area = 1.0f / area;
 
-    /* Incremental Steps */
-    float step_x_w0 = v2y - v1y;
-    float step_y_w0 = v1x - v2x;
-    
-    float step_x_w1 = v0y - v2y;
-    float step_y_w1 = v2x - v0x;
-    
-    float step_x_w2 = v1y - v0y;
-    float step_y_w2 = v0x - v1x;
+    float step_x_w0 = v2y - v1y; float step_y_w0 = v1x - v2x;
+    float step_x_w1 = v0y - v2y; float step_y_w1 = v2x - v0x;
+    float step_x_w2 = v1y - v0y; float step_y_w2 = v0x - v1x;
 
-    /* Initial values at top-left of bounding box */
-    vec2_t start_p;
-    start_p.x = (float)min_x + 0.5f;
-    start_p.y = (float)min_y + 0.5f;
-    
+    vec2_t start_p; start_p.x = (float)min_x + 0.5f; start_p.y = (float)min_y + 0.5f;
     float row_w0 = edge_function(p1, p2, start_p);
     float row_w1 = edge_function(p2, p0, start_p);
     float row_w2 = edge_function(p0, p1, start_p);
 
-    /* Normalize winding so we always check w >= 0 */
     if (area < 0) {
-        area = -area;
-        one_over_area = -one_over_area;
+        area = -area; one_over_area = -one_over_area;
         row_w0 = -row_w0; step_x_w0 = -step_x_w0; step_y_w0 = -step_y_w0;
         row_w1 = -row_w1; step_x_w1 = -step_x_w1; step_y_w1 = -step_y_w1;
         row_w2 = -row_w2; step_x_w2 = -step_x_w2; step_y_w2 = -step_y_w2;
@@ -355,17 +348,7 @@ static void spr_rasterize_triangle_simd(spr_context_t* ctx, const spr_vertex_out
     __m128 v_off_w1 = _mm_mul_ps(_mm_set_ps(3,2,1,0), v_step_x_w1);
     __m128 v_off_w2 = _mm_mul_ps(_mm_set_ps(3,2,1,0), v_step_x_w2);
     
-    __m128 v_ooa = _mm_set1_ps(one_over_area);
-    __m128 v_inv_w0 = _mm_set1_ps(v0->position.w);
-    __m128 v_inv_w1 = _mm_set1_ps(v1->position.w);
-    __m128 v_inv_w2 = _mm_set1_ps(v2->position.w);
-    
-    __m128 v_z0 = _mm_set1_ps(v0->position.z);
-    __m128 v_z1 = _mm_set1_ps(v1->position.z);
-    __m128 v_z2 = _mm_set1_ps(v2->position.z);
-
     __m128 zero = _mm_setzero_ps();
-    __m128 one = _mm_set1_ps(1.0f);
 
     for (y = min_y; y <= max_y; ++y) {
         float w0 = row_w0;
@@ -380,73 +363,47 @@ static void spr_rasterize_triangle_simd(spr_context_t* ctx, const spr_vertex_out
         int x_end_simd = min_x + ((max_x - min_x + 1) & ~3);
         
         for (; x < x_end_simd; x += 4) {
-            /* 1. Coverage Test */
             __m128 mask = _mm_and_ps(_mm_cmpge_ps(v_w0, zero),
                           _mm_and_ps(_mm_cmpge_ps(v_w1, zero),
                                      _mm_cmpge_ps(v_w2, zero)));
             
             int m = _mm_movemask_ps(mask);
             if (m) {
-                int idx = y * width + x;
+                /* We have to de-vectorize to insert nodes anyway, so keep it simple */
+                float w0s[4], w1s[4], w2s[4];
+                _mm_storeu_ps(w0s, v_w0);
+                _mm_storeu_ps(w1s, v_w1);
+                _mm_storeu_ps(w2s, v_w2);
                 
-                /* 2. Vectorized Barycentric Weights */
-                __m128 alpha = _mm_mul_ps(v_w0, v_ooa);
-                __m128 beta  = _mm_mul_ps(v_w1, v_ooa);
-                __m128 gamma = _mm_mul_ps(v_w2, v_ooa);
-                
-                /* 3. Vectorized Perspective Correction (1/W) */
-                __m128 w_recip = _mm_add_ps(_mm_mul_ps(alpha, v_inv_w0), 
-                                 _mm_add_ps(_mm_mul_ps(beta, v_inv_w1), 
-                                            _mm_mul_ps(gamma, v_inv_w2)));
-                
-                __m128 w_final = _mm_div_ps(one, w_recip);
-                
-                /* 4. Vectorized Z Interpolation */
-                __m128 term0 = _mm_mul_ps(v_z0, _mm_mul_ps(v_inv_w0, alpha));
-                __m128 term1 = _mm_mul_ps(v_z1, _mm_mul_ps(v_inv_w1, beta));
-                __m128 term2 = _mm_mul_ps(v_z2, _mm_mul_ps(v_inv_w2, gamma));
-                
-                __m128 v_z = _mm_mul_ps(_mm_add_ps(term0, _mm_add_ps(term1, term2)), w_final);
-                
-                /* 5. Vectorized Depth Test */
-                __m128 v_old_z = _mm_loadu_ps(&ctx->fb.depth_buffer[idx]);
-                
-                __m128 depth_mask = _mm_and_ps(_mm_cmplt_ps(v_z, v_old_z),
-                                    _mm_and_ps(_mm_cmpge_ps(v_z, zero),
-                                               _mm_cmple_ps(v_z, one)));
-                
-                mask = _mm_and_ps(mask, depth_mask);
-                
-                m = _mm_movemask_ps(mask);
-                if (m) {
-                    /* Write Depth */
-                    __m128 z_write = _mm_or_ps(_mm_and_ps(mask, v_z), _mm_andnot_ps(mask, v_old_z));
-                    _mm_storeu_ps(&ctx->fb.depth_buffer[idx], z_write);
-                    
-                    /* 6. Interpolate Attributes (Only if needed) */
-                    float alphas[4], betas[4], gammas[4], w_finals[4];
-                    _mm_storeu_ps(alphas, alpha);
-                    _mm_storeu_ps(betas, beta);
-                    _mm_storeu_ps(gammas, gamma);
-                    _mm_storeu_ps(w_finals, w_final);
-                    
-                    /* Loop over active pixels for Shading */
-                    for (int i=0; i<4; ++i) {
-                        if (m & (1 << i)) {
+                for (int i=0; i<4; ++i) {
+                    if (m & (1 << i)) {
+                        /* Scalar Insertion Code (Copied from CPU version logic) */
+                        int px = x + i;
+                        float lw0 = w0s[i]; float lw1 = w1s[i]; float lw2 = w2s[i];
+                        
+                        float alpha = lw0 * one_over_area;
+                        float beta = lw1 * one_over_area;
+                        float gamma = lw2 * one_over_area;
+                        
+                        float inv_w0 = v0->position.w;
+                        float inv_w1 = v1->position.w;
+                        float inv_w2 = v2->position.w;
+                        
+                        float w_recip = alpha * inv_w0 + beta * inv_w1 + gamma * inv_w2;
+                        float w_final = 1.0f / w_recip;
+                        
+                        float z = (v0->position.z * inv_w0 * alpha + v1->position.z * inv_w1 * beta + v2->position.z * inv_w2 * gamma) * w_final;
+                        
+                        if (z >= 0.0f && z <= 1.0f) {
                             spr_vertex_out_t interp;
-                            float a = alphas[i];
-                            float b = betas[i];
-                            float g = gammas[i];
-                            float wf = w_finals[i];
-                            
-                            float wa = a * v0->position.w * wf;
-                            float wb = b * v1->position.w * wf;
-                            float wg = g * v2->position.w * wf;
-                            
-                            interp.position.x = (float)(x + i) + 0.5f;
+                            interp.position.x = (float)px + 0.5f;
                             interp.position.y = (float)y + 0.5f;
-                            interp.position.z = 0; 
-                            interp.position.w = wf;
+                            interp.position.z = z;
+                            interp.position.w = w_final;
+                            
+                            float wa = alpha * inv_w0 * w_final;
+                            float wb = beta * inv_w1 * w_final;
+                            float wg = gamma * inv_w2 * w_final;
                             
                             interp.color.x = v0->color.x * wa + v1->color.x * wb + v2->color.x * wg;
                             interp.color.y = v0->color.y * wa + v1->color.y * wb + v2->color.y * wg;
@@ -460,8 +417,8 @@ static void spr_rasterize_triangle_simd(spr_context_t* ctx, const spr_vertex_out
                             interp.normal.y = v0->normal.y * wa + v1->normal.y * wb + v2->normal.y * wg;
                             interp.normal.z = v0->normal.z * wa + v1->normal.z * wb + v2->normal.z * wg;
 
-                            spr_color_t c = ctx->current_fs(ctx->current_uniforms, &interp);
-                            ctx->fb.color_buffer[idx + i] = spr_make_color(c.r, c.g, c.b, c.a);
+                            spr_fs_output_t out = ctx->current_fs(ctx->current_uniforms, &interp);
+                            insert_fragment(ctx, y * width + px, z, out);
                         }
                     }
                 }
@@ -471,7 +428,6 @@ static void spr_rasterize_triangle_simd(spr_context_t* ctx, const spr_vertex_out
             v_w2 = _mm_add_ps(v_w2, v_step_x_w2_4);
         }
         
-        /* Update scalar w0 to match where SIMD left off for the tail loop */
         if (x < max_x + 1) {
             float offset = (float)(x - min_x);
             w0 = row_w0 + offset * step_x_w0;
@@ -480,7 +436,6 @@ static void spr_rasterize_triangle_simd(spr_context_t* ctx, const spr_vertex_out
         }
 
         for (; x <= max_x; ++x) {
-            /* Scalar Loop (Tail) */
             if (w0 >= 0 && w1 >= 0 && w2 >= 0) {
                 float alpha = w0 * one_over_area;
                 float beta = w1 * one_over_area;
@@ -495,10 +450,7 @@ static void spr_rasterize_triangle_simd(spr_context_t* ctx, const spr_vertex_out
                 
                 float z = (v0->position.z * inv_w0 * alpha + v1->position.z * inv_w1 * beta + v2->position.z * inv_w2 * gamma) * w_final;
                 
-                int idx = y * width + x;
-                if (z < ctx->fb.depth_buffer[idx] && z >= 0.0f && z <= 1.0f) {
-                    ctx->fb.depth_buffer[idx] = z;
-                    
+                if (z >= 0.0f && z <= 1.0f) {
                     spr_vertex_out_t interp;
                     interp.position.x = (float)x + 0.5f;
                     interp.position.y = (float)y + 0.5f;
@@ -521,20 +473,15 @@ static void spr_rasterize_triangle_simd(spr_context_t* ctx, const spr_vertex_out
                     interp.normal.y = v0->normal.y * wa + v1->normal.y * wb + v2->normal.y * wg;
                     interp.normal.z = v0->normal.z * wa + v1->normal.z * wb + v2->normal.z * wg;
 
-                    spr_color_t c = ctx->current_fs(ctx->current_uniforms, &interp);
-                    ctx->fb.color_buffer[idx] = spr_make_color(c.r, c.g, c.b, c.a);
+                    spr_fs_output_t out = ctx->current_fs(ctx->current_uniforms, &interp);
+                    insert_fragment(ctx, y * width + x, z, out);
                 }
             }
-            w0 += step_x_w0;
-            w1 += step_x_w1;
-            w2 += step_x_w2;
+            w0 += step_x_w0; w1 += step_x_w1; w2 += step_x_w2;
         }
-        row_w0 += step_y_w0;
-        row_w1 += step_y_w1;
-        row_w2 += step_y_w2;
+        row_w0 += step_y_w0; row_w1 += step_y_w1; row_w2 += step_y_w2;
     }
 #else
-    /* Fallback if somehow called without SSE support compilation */
     spr_rasterize_triangle_cpu(ctx, v0, v1, v2);
 #endif
 }
@@ -549,14 +496,22 @@ spr_context_t* spr_init(int width, int height) {
     ctx->fb.height = height;
     
     ctx->fb.color_buffer = (uint32_t*)malloc(width * height * sizeof(uint32_t));
-    if (!ctx->fb.color_buffer) {
-        free(ctx);
-        return NULL;
-    }
+    /* Depth buffer no longer needed, using A-buffer logic, but maybe keep for legacy? 
+       Actually, removing it saves memory. */
+    ctx->fb.depth_buffer = NULL; 
 
-    ctx->fb.depth_buffer = (float*)malloc(width * height * sizeof(float));
-    if (!ctx->fb.depth_buffer) {
-        free(ctx->fb.color_buffer);
+    /* A-Buffer Init */
+    ctx->fragment_heads = (spr_fragment_t**)calloc(width * height, sizeof(spr_fragment_t*));
+    
+    /* Pool: Allow average of 8 layers */
+    ctx->pool_capacity = width * height * FRAGMENTS_PER_PIXEL_AVG;
+    ctx->fragment_pool = (spr_fragment_t*)malloc(ctx->pool_capacity * sizeof(spr_fragment_t));
+    ctx->pool_cursor = 0;
+
+    if (!ctx->fb.color_buffer || !ctx->fragment_heads || !ctx->fragment_pool) {
+        if (ctx->fb.color_buffer) free(ctx->fb.color_buffer);
+        if (ctx->fragment_heads) free(ctx->fragment_heads);
+        if (ctx->fragment_pool) free(ctx->fragment_pool);
         free(ctx);
         return NULL;
     }
@@ -680,7 +635,7 @@ void spr_rotate(spr_context_t* ctx, float angle_deg, float x, float y, float z) 
     float s = sinf(rad);
     vec3_t axis = {x, y, z};
     
-    if (!ctx) return;
+    if (!ctx) return; 
     
     axis = vec3_normalize(axis);
     
@@ -742,7 +697,8 @@ void spr_perspective(spr_context_t* ctx, float fov_deg, float aspect, float near
 void spr_shutdown(spr_context_t* ctx) {
     if (ctx) {
         if (ctx->fb.color_buffer) free(ctx->fb.color_buffer);
-        if (ctx->fb.depth_buffer) free(ctx->fb.depth_buffer);
+        if (ctx->fragment_heads) free(ctx->fragment_heads);
+        if (ctx->fragment_pool) free(ctx->fragment_pool);
         free(ctx);
     }
 }
@@ -750,15 +706,20 @@ void spr_shutdown(spr_context_t* ctx) {
 void spr_clear(spr_context_t* ctx, uint32_t color, float depth) {
     int pixel_count;
     int i;
+    (void)depth; /* Depth not used for clear in A-buffer */
     
     if (!ctx) return;
 
     pixel_count = ctx->fb.width * ctx->fb.height;
 
+    /* Fill background */
     for (i = 0; i < pixel_count; ++i) {
         ctx->fb.color_buffer[i] = color;
-        ctx->fb.depth_buffer[i] = depth;
     }
+    
+    /* Reset A-Buffer */
+    memset(ctx->fragment_heads, 0, pixel_count * sizeof(spr_fragment_t*));
+    ctx->pool_cursor = 0;
 }
 
 uint32_t* spr_get_color_buffer(spr_context_t* ctx) {
@@ -775,6 +736,12 @@ int spr_get_height(spr_context_t* ctx) {
 }
 
 void spr_draw_triangle_simple(spr_context_t* ctx, vec3_t v0, vec3_t v1, vec3_t v2, uint32_t color) {
+    /* Legacy fallback using old drawer if needed, but we removed it? */
+    /* Let's redirect to generic drawer with a basic shader if really needed, or just stub it out. */
+    /* For now, keeping it stubbed or updating it to use A-buffer manually would be tedious. */
+    /* I'll leave it as is, but it calls spr_draw_triangle_2d_flat which writes DIRECTLY to buffer. */
+    /* This will bypass A-buffer. That's fine for debug/test. */
+    
     mat4_t mv = ctx->modelview_stack[ctx->modelview_ptr];
     mat4_t p = ctx->projection_stack[ctx->projection_ptr];
     mat4_t mvp = spr_mat4_mul(p, mv);
@@ -847,5 +814,73 @@ void spr_draw_triangles(spr_context_t* ctx, int count, const void* vertices, siz
         v2.position.w = inv_w2;
         
         ctx->rasterizer_func(ctx, &v0, &v1, &v2);
+    }
+}
+
+/* --- Resolve --- */
+
+void spr_resolve(spr_context_t* ctx) {
+    if (!ctx) return;
+    int count = ctx->fb.width * ctx->fb.height;
+    int i;
+    
+    for (i = 0; i < count; ++i) {
+        spr_fragment_t* head = ctx->fragment_heads[i];
+        if (!head) continue; /* Keep background */
+        
+        /* Sort list by Z (Descending / Farthest first) */
+        /* Insertion sort on linked list */
+        spr_fragment_t* sorted = NULL;
+        spr_fragment_t* curr = head;
+        while (curr) {
+            spr_fragment_t* next = curr->next;
+            
+            /* Insert curr into sorted */
+            if (!sorted || curr->z >= sorted->z) {
+                curr->next = sorted;
+                sorted = curr;
+            } else {
+                spr_fragment_t* s = sorted;
+                while (s->next && s->next->z > curr->z) {
+                    s = s->next;
+                }
+                curr->next = s->next;
+                s->next = curr;
+            }
+            curr = next;
+        }
+        
+        /* Composite Back-to-Front */
+        /* Start with Background Color */
+        /* Extract Background from buffer (assuming it was cleared) */
+        uint32_t bg_packed = ctx->fb.color_buffer[i];
+        float acc_r = (bg_packed & 0xFF) / 255.0f;
+        float acc_g = ((bg_packed >> 8) & 0xFF) / 255.0f;
+        float acc_b = ((bg_packed >> 16) & 0xFF) / 255.0f;
+        
+        curr = sorted;
+        while (curr) {
+            /* Standard Over: Out = Src + Dst * (1 - SrcAlpha) */
+            /* User said: output color is (generated * opacity). So curr->color is premultiplied */
+            
+            /* Per-channel opacity */
+            acc_r = curr->color.x + acc_r * (1.0f - curr->opacity.x);
+            acc_g = curr->color.y + acc_g * (1.0f - curr->opacity.y);
+            acc_b = curr->color.z + acc_b * (1.0f - curr->opacity.z);
+            
+            curr = curr->next;
+        }
+        
+        /* Write back */
+        if (acc_r > 1.0f) acc_r = 1.0f;
+        if (acc_g > 1.0f) acc_g = 1.0f;
+        if (acc_b > 1.0f) acc_b = 1.0f;
+        
+        ctx->fb.color_buffer[i] = spr_make_color(
+            (uint8_t)(acc_r * 255.0f),
+            (uint8_t)(acc_g * 255.0f),
+            (uint8_t)(acc_b * 255.0f),
+            255
+        );
     }
 }

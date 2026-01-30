@@ -130,7 +130,6 @@ int main(int argc, char* argv[]) {
     view.rot_y = 0.0f;
     view.pan_x = 0.0f;
     view.pan_y = 0.0f;
-    /* Initial light direction (roughly 0.5, 1.0, 1.0) */
     view.light_rot_x = 45.0f;
     view.light_rot_y = 30.0f;
     
@@ -141,6 +140,7 @@ int main(int argc, char* argv[]) {
     int frame_count = 0;
     int current_fps = 0;
     int color_mode = 0; /* 0: Grey, 1: Red */
+    int opacity_mode = 0; /* 0: Opaque, 1: Transparent (0.5) */
     double current_render_ms = 0.0;
     double accumulated_render_ms = 0.0;
     uint32_t last_time = SDL_GetTicks();
@@ -157,6 +157,7 @@ int main(int argc, char* argv[]) {
                     case SDLK_ESCAPE: running = 0; break;
                     case SDLK_f: show_fps = !show_fps; break;
                     case SDLK_c: color_mode = !color_mode; break;
+                    case SDLK_o: opacity_mode = !opacity_mode; break;
                     case SDLK_1: current_shader = SHADER_CONSTANT; break;
                     case SDLK_2: current_shader = SHADER_MATTE; break;
                     case SDLK_3: current_shader = SHADER_PLASTIC; break;
@@ -231,7 +232,6 @@ int main(int argc, char* argv[]) {
         u.mvp = spr_mat4_mul(spr_get_projection_matrix(ctx), spr_get_modelview_matrix(ctx));
         u.model = spr_get_modelview_matrix(ctx);
         
-        /* Calculate light direction from rotations */
         float lx = sinf(view.light_rot_y * (float)M_PI / 180.0f) * cosf(view.light_rot_x * (float)M_PI / 180.0f);
         float ly = sinf(view.light_rot_x * (float)M_PI / 180.0f);
         float lz = cosf(view.light_rot_y * (float)M_PI / 180.0f) * cosf(view.light_rot_x * (float)M_PI / 180.0f);
@@ -243,6 +243,12 @@ int main(int argc, char* argv[]) {
             spr_uniforms_set_color(&u, 0.7f, 0.7f, 0.7f, 1.0f); /* Grey */
         } else {
             spr_uniforms_set_color(&u, 0.8f, 0.2f, 0.2f, 1.0f); /* Red */
+        }
+        
+        if (opacity_mode == 0) {
+            spr_uniforms_set_opacity(&u, 1.0f, 1.0f, 1.0f); /* Opaque */
+        } else {
+            spr_uniforms_set_opacity(&u, 0.5f, 0.5f, 0.5f); /* 50% Translucent */
         }
         
         u.roughness = 32.0f;
@@ -268,6 +274,9 @@ int main(int argc, char* argv[]) {
         
         /* Draw */
         spr_draw_triangles(ctx, mesh->vertex_count / 3, mesh->vertices, sizeof(stl_vertex_t));
+        
+        /* Resolve A-Buffer */
+        spr_resolve(ctx);
         
         uint64_t end_time = SDL_GetPerformanceCounter();
         accumulated_render_ms += (double)((end_time - start_time) * 1000) / perf_freq;
