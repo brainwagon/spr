@@ -218,6 +218,8 @@ int main(int argc, char* argv[]) {
                         snprintf(title, sizeof(title), "SPR STL Viewer [FPS: %d] [Render: %.2f ms]", current_fps, current_render_ms);
                         SDL_SetWindowTitle(window, title);
                     }
+                } else if (e.key.keysym.sym == SDLK_ESCAPE) {
+                    running = 0;
                 }
             }
             else if (e.type == SDL_MOUSEBUTTONDOWN) {
