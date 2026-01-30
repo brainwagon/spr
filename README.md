@@ -2,25 +2,22 @@
 
 ![Benchy](benchy.png)
 
-A minimalist, single-file C library for software-based 3D rendering, accompanied by a fully functional interactive STL viewer.
+A minimalist C library for software-based 3D rendering, accompanied by a fully functional interactive STL viewer.
 
 ## Features
 
 ### SPR Library (`spr.h` / `spr.c`)
 *   **Zero Dependencies**: Relies only on the standard C library (`stdlib.h`, `math.h`, `string.h`).
+*   **A-Buffer Transparency**: Implements Order-Independent Transparency (OIT) using a per-pixel fragment list and back-to-front compositing.
 *   **Programmable Pipeline**: Support for custom **Vertex** and **Fragment** shaders.
-*   **Features**:
-    *   3D Math (Matrices, Vectors via stack).
-    *   Transform Stack (Push/Pop, ModelView/Projection).
-    *   Perspective Correct Rasterization.
-    *   Depth Buffering (Z-buffer).
-    *   Clipper (Near plane rejection).
+*   **SIMD Optimized**: Includes SSE2 optimized paths for high-performance rasterization.
+*   **Core Math**: 3D Matrices and Vectors via a transform stack (Push/Pop, ModelView/Projection).
 *   **Output**: Renders to a raw 32-bit RGBA buffer.
 
 ### STL Viewer (`viewer.c`)
-*   **Interactive**: Real-time orbit, pan, and zoom controls using **SDL2**.
-*   **Format Support**: Loads both Binary and ASCII `.stl` files.
-*   **Shading**: Implements a "Plastic" shader with specular highlights.
+*   **Interactive**: Real-time orbit, pan, zoom, and light rotation using **SDL2**.
+*   **Shaders**: Includes a library of common shaders (`spr_shaders.h`): **Constant**, **Matte**, **Plastic**, and **Metal**.
+*   **Format Support**: Loads both Binary and ASCII `.stl` files, including support for 15-bit color attributes.
 
 ## Prerequisites
 
@@ -31,36 +28,40 @@ A minimalist, single-file C library for software-based 3D rendering, accompanied
 
 ## Building
 
-### 1. Build the STL Viewer
+The project uses a simple `Makefile`.
+
+### Build the Viewer
 ```bash
-gcc viewer.c spr.c stl.c -o viewer $(sdl2-config --cflags --libs) -lm
+make
 ```
 
-### 2. Build the Standalone Test (No SDL required)
-Generates a `output_final.ppm` image without opening a window.
+### Build the Standalone Test (No SDL required)
 ```bash
-gcc test.c spr.c -o test_spr -lm
+make test_spr
 ```
 
 ## Usage
 
 ### Running the Viewer
 ```bash
-./viewer stl/bracket.stl
+./viewer stl/bracket.stl [-simd | -cpu]
 ```
 
 **Controls**:
-*   **Left Mouse Drag**: Rotate (Orbit)
+*   **Left Mouse Drag**: Rotate camera (Orbit)
+*   **Shift + Left Mouse Drag**: Rotate light direction
 *   **Right Mouse Drag**: Pan
 *   **Mouse Wheel**: Zoom
-*   **'f' Key**: Toggle FPS display
-*   **'c' Key**: Toggle Color Mode (Grey / Red)
+*   **'f' Key**: Toggle FPS and Render Time display
+*   **'o' Key**: Toggle Transparency (Opaque / Translucent)
+*   **'c' Key**: Toggle Base Color (Grey / Red)
 *   **1-4 Keys**: Switch Shaders (Constant, Matte, Plastic, Metal)
 
 ## Project Structure
 
-*   `spr.h` / `spr.c`: The core renderer library.
-*   `stl.h` / `stl.c`: STL file loader.
-*   `viewer.c`: Interactive viewer application using SDL2.
-*   `test.c`: Minimal test suite for the library.
-*   `docs/`: Development plans and documentation.
+*   `spr.h` / `spr.c`: The core renderer library (A-Buffer, SIMD).
+*   `spr_shaders.h` / `spr_shaders.c`: Library of common shading models.
+*   `stl.h` / `stl.c`: STL file loader with color attribute support.
+*   `viewer.c`: Interactive viewer application.
+*   `Makefile`: Build system.
+*   `docs/`: Development plans and architecture notes.
