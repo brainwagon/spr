@@ -355,7 +355,17 @@ static void spr_rasterize_triangle_simd(spr_context_t* ctx, const spr_vertex_out
     __m128 v_off_w1 = _mm_mul_ps(_mm_set_ps(3,2,1,0), v_step_x_w1);
     __m128 v_off_w2 = _mm_mul_ps(_mm_set_ps(3,2,1,0), v_step_x_w2);
     
+    __m128 v_ooa = _mm_set1_ps(one_over_area);
+    __m128 v_inv_w0 = _mm_set1_ps(v0->position.w);
+    __m128 v_inv_w1 = _mm_set1_ps(v1->position.w);
+    __m128 v_inv_w2 = _mm_set1_ps(v2->position.w);
+    
+    __m128 v_z0 = _mm_set1_ps(v0->position.z);
+    __m128 v_z1 = _mm_set1_ps(v1->position.z);
+    __m128 v_z2 = _mm_set1_ps(v2->position.z);
+
     __m128 zero = _mm_setzero_ps();
+    __m128 one = _mm_set1_ps(1.0f);
 
     for (y = min_y; y <= max_y; ++y) {
         float w0 = row_w0;
@@ -370,59 +380,88 @@ static void spr_rasterize_triangle_simd(spr_context_t* ctx, const spr_vertex_out
         int x_end_simd = min_x + ((max_x - min_x + 1) & ~3);
         
         for (; x < x_end_simd; x += 4) {
+            /* 1. Coverage Test */
             __m128 mask = _mm_and_ps(_mm_cmpge_ps(v_w0, zero),
                           _mm_and_ps(_mm_cmpge_ps(v_w1, zero),
                                      _mm_cmpge_ps(v_w2, zero)));
             
             int m = _mm_movemask_ps(mask);
             if (m) {
-                float w0s[4], w1s[4], w2s[4];
-                _mm_storeu_ps(w0s, v_w0);
-                _mm_storeu_ps(w1s, v_w1);
-                _mm_storeu_ps(w2s, v_w2);
+                int idx = y * width + x;
                 
-                for (int i=0; i<4; ++i) {
-                    if (m & (1 << i)) {
-                        int px = x + i;
-                        float lw0 = w0s[i]; float lw1 = w1s[i]; float lw2 = w2s[i];
-                        
-                        float alpha = lw0 * one_over_area;
-                        float beta = lw1 * one_over_area;
-                        float gamma = lw2 * one_over_area;
-                        
-                        float inv_w0 = v0->position.w;
-                        float inv_w1 = v1->position.w;
-                        float inv_w2 = v2->position.w;
-                        
-                        float w_recip = alpha * inv_w0 + beta * inv_w1 + gamma * inv_w2;
-                        float w_final = 1.0f / w_recip;
-                        
-                        float z = (v0->position.z * inv_w0 * alpha + v1->position.z * inv_w1 * beta + v2->position.z * inv_w2 * gamma) * w_final;
-                        
-                        int idx = y * width + px;
-                        if (z < ctx->fb.depth_buffer[idx] && z >= 0.0f && z <= 1.0f) {
-                            ctx->fb.depth_buffer[idx] = z;
-                            
+                /* 2. Vectorized Barycentric Weights */
+                __m128 alpha = _mm_mul_ps(v_w0, v_ooa);
+                __m128 beta  = _mm_mul_ps(v_w1, v_ooa);
+                __m128 gamma = _mm_mul_ps(v_w2, v_ooa);
+                
+                /* 3. Vectorized Perspective Correction (1/W) */
+                __m128 w_recip = _mm_add_ps(_mm_mul_ps(alpha, v_inv_w0), 
+                                 _mm_add_ps(_mm_mul_ps(beta, v_inv_w1), 
+                                            _mm_mul_ps(gamma, v_inv_w2)));
+                
+                __m128 w_final = _mm_div_ps(one, w_recip);
+                
+                /* 4. Vectorized Z Interpolation */
+                __m128 term0 = _mm_mul_ps(v_z0, _mm_mul_ps(v_inv_w0, alpha));
+                __m128 term1 = _mm_mul_ps(v_z1, _mm_mul_ps(v_inv_w1, beta));
+                __m128 term2 = _mm_mul_ps(v_z2, _mm_mul_ps(v_inv_w2, gamma));
+                
+                __m128 v_z = _mm_mul_ps(_mm_add_ps(term0, _mm_add_ps(term1, term2)), w_final);
+                
+                /* 5. Vectorized Depth Test */
+                __m128 v_old_z = _mm_loadu_ps(&ctx->fb.depth_buffer[idx]);
+                
+                __m128 depth_mask = _mm_and_ps(_mm_cmplt_ps(v_z, v_old_z),
+                                    _mm_and_ps(_mm_cmpge_ps(v_z, zero),
+                                               _mm_cmple_ps(v_z, one)));
+                
+                mask = _mm_and_ps(mask, depth_mask);
+                
+                m = _mm_movemask_ps(mask);
+                if (m) {
+                    /* Write Depth */
+                    __m128 z_write = _mm_or_ps(_mm_and_ps(mask, v_z), _mm_andnot_ps(mask, v_old_z));
+                    _mm_storeu_ps(&ctx->fb.depth_buffer[idx], z_write);
+                    
+                    /* 6. Interpolate Attributes (Only if needed) */
+                    float alphas[4], betas[4], gammas[4], w_finals[4];
+                    _mm_storeu_ps(alphas, alpha);
+                    _mm_storeu_ps(betas, beta);
+                    _mm_storeu_ps(gammas, gamma);
+                    _mm_storeu_ps(w_finals, w_final);
+                    
+                    /* Loop over active pixels for Shading */
+                    for (int i=0; i<4; ++i) {
+                        if (m & (1 << i)) {
                             spr_vertex_out_t interp;
-                            interp.position.x = (float)px + 0.5f;
-                            interp.position.y = (float)y + 0.5f;
-                            interp.position.z = z;
-                            interp.position.w = w_final;
+                            float a = alphas[i];
+                            float b = betas[i];
+                            float g = gammas[i];
+                            float wf = w_finals[i];
                             
-                            interp.color.x = (v0->color.x * inv_w0 * alpha + v1->color.x * inv_w1 * beta + v2->color.x * inv_w2 * gamma) * w_final;
-                            interp.color.y = (v0->color.y * inv_w0 * alpha + v1->color.y * inv_w1 * beta + v2->color.y * inv_w2 * gamma) * w_final;
-                            interp.color.z = (v0->color.z * inv_w0 * alpha + v1->color.z * inv_w1 * beta + v2->color.z * inv_w2 * gamma) * w_final;
-                            interp.color.w = (v0->color.w * inv_w0 * alpha + v1->color.w * inv_w1 * beta + v2->color.w * inv_w2 * gamma) * w_final;
+                            float wa = a * v0->position.w * wf;
+                            float wb = b * v1->position.w * wf;
+                            float wg = g * v2->position.w * wf;
+                            
+                            interp.position.x = (float)(x + i) + 0.5f;
+                            interp.position.y = (float)y + 0.5f;
+                            interp.position.z = 0; 
+                            interp.position.w = wf;
+                            
+                            interp.color.x = v0->color.x * wa + v1->color.x * wb + v2->color.x * wg;
+                            interp.color.y = v0->color.y * wa + v1->color.y * wb + v2->color.y * wg;
+                            interp.color.z = v0->color.z * wa + v1->color.z * wb + v2->color.z * wg;
+                            interp.color.w = v0->color.w * wa + v1->color.w * wb + v2->color.w * wg;
 
-                            interp.uv.x = (v0->uv.x * inv_w0 * alpha + v1->uv.x * inv_w1 * beta + v2->uv.x * inv_w2 * gamma) * w_final;
-                            interp.uv.y = (v0->uv.y * inv_w0 * alpha + v1->uv.y * inv_w1 * beta + v2->uv.y * inv_w2 * gamma) * w_final;
+                            interp.uv.x = v0->uv.x * wa + v1->uv.x * wb + v2->uv.x * wg;
+                            interp.uv.y = v0->uv.y * wa + v1->uv.y * wb + v2->uv.y * wg;
 
-                            interp.normal.x = (v0->normal.x * inv_w0 * alpha + v1->normal.x * inv_w1 * beta + v2->normal.x * inv_w2 * gamma) * w_final;
-                            interp.normal.y = (v0->normal.y * inv_w0 * alpha + v1->normal.y * inv_w1 * beta + v2->normal.y * inv_w2 * gamma) * w_final;
-                            interp.normal.z = (v0->normal.z * inv_w0 * alpha + v1->normal.z * inv_w1 * beta + v2->normal.z * inv_w2 * gamma) * w_final;
+                            interp.normal.x = v0->normal.x * wa + v1->normal.x * wb + v2->normal.x * wg;
+                            interp.normal.y = v0->normal.y * wa + v1->normal.y * wb + v2->normal.y * wg;
+                            interp.normal.z = v0->normal.z * wa + v1->normal.z * wb + v2->normal.z * wg;
 
                             spr_color_t c = ctx->current_fs(ctx->current_uniforms, &interp);
-                            ctx->fb.color_buffer[idx] = spr_make_color(c.r, c.g, c.b, c.a);
+                            ctx->fb.color_buffer[idx + i] = spr_make_color(c.r, c.g, c.b, c.a);
                         }
                     }
                 }
@@ -466,17 +505,21 @@ static void spr_rasterize_triangle_simd(spr_context_t* ctx, const spr_vertex_out
                     interp.position.z = z;
                     interp.position.w = w_final;
                     
-                    interp.color.x = (v0->color.x * inv_w0 * alpha + v1->color.x * inv_w1 * beta + v2->color.x * inv_w2 * gamma) * w_final;
-                    interp.color.y = (v0->color.y * inv_w0 * alpha + v1->color.y * inv_w1 * beta + v2->color.y * inv_w2 * gamma) * w_final;
-                    interp.color.z = (v0->color.z * inv_w0 * alpha + v1->color.z * inv_w1 * beta + v2->color.z * inv_w2 * gamma) * w_final;
-                    interp.color.w = (v0->color.w * inv_w0 * alpha + v1->color.w * inv_w1 * beta + v2->color.w * inv_w2 * gamma) * w_final;
+                    float wa = alpha * inv_w0 * w_final;
+                    float wb = beta * inv_w1 * w_final;
+                    float wg = gamma * inv_w2 * w_final;
+                    
+                    interp.color.x = v0->color.x * wa + v1->color.x * wb + v2->color.x * wg;
+                    interp.color.y = v0->color.y * wa + v1->color.y * wb + v2->color.y * wg;
+                    interp.color.z = v0->color.z * wa + v1->color.z * wb + v2->color.z * wg;
+                    interp.color.w = v0->color.w * wa + v1->color.w * wb + v2->color.w * wg;
 
-                    interp.uv.x = (v0->uv.x * inv_w0 * alpha + v1->uv.x * inv_w1 * beta + v2->uv.x * inv_w2 * gamma) * w_final;
-                    interp.uv.y = (v0->uv.y * inv_w0 * alpha + v1->uv.y * inv_w1 * beta + v2->uv.y * inv_w2 * gamma) * w_final;
+                    interp.uv.x = v0->uv.x * wa + v1->uv.x * wb + v2->uv.x * wg;
+                    interp.uv.y = v0->uv.y * wa + v1->uv.y * wb + v2->uv.y * wg;
 
-                    interp.normal.x = (v0->normal.x * inv_w0 * alpha + v1->normal.x * inv_w1 * beta + v2->normal.x * inv_w2 * gamma) * w_final;
-                    interp.normal.y = (v0->normal.y * inv_w0 * alpha + v1->normal.y * inv_w1 * beta + v2->normal.y * inv_w2 * gamma) * w_final;
-                    interp.normal.z = (v0->normal.z * inv_w0 * alpha + v1->normal.z * inv_w1 * beta + v2->normal.z * inv_w2 * gamma) * w_final;
+                    interp.normal.x = v0->normal.x * wa + v1->normal.x * wb + v2->normal.x * wg;
+                    interp.normal.y = v0->normal.y * wa + v1->normal.y * wb + v2->normal.y * wg;
+                    interp.normal.z = v0->normal.z * wa + v1->normal.z * wb + v2->normal.z * wg;
 
                     spr_color_t c = ctx->current_fs(ctx->current_uniforms, &interp);
                     ctx->fb.color_buffer[idx] = spr_make_color(c.r, c.g, c.b, c.a);
