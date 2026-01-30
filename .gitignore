@@ -1,0 +1,22 @@
+# Binaries
+viewer
+test_spr
+test_spr_final
+test_spr_phase2
+test_spr_phase3
+*.o
+*.a
+
+# Output images
+*.ppm
+*.png
+*.jpg
+
+# Editor files
+.vscode/
+.idea/
+*.swp
+*~
+
+# OS files
+.DS_Store
