@@ -74,6 +74,7 @@ stl_object_t* stl_load(const char* filename) {
             obj->vertices[idx].nx = normal[0];
             obj->vertices[idx].ny = normal[1];
             obj->vertices[idx].nz = normal[2];
+            obj->vertices[idx].attr = attr;
 
             /* Vertex 2 */
             obj->vertices[idx+1].x = v2[0];
@@ -82,6 +83,7 @@ stl_object_t* stl_load(const char* filename) {
             obj->vertices[idx+1].nx = normal[0];
             obj->vertices[idx+1].ny = normal[1];
             obj->vertices[idx+1].nz = normal[2];
+            obj->vertices[idx+1].attr = attr;
 
             /* Vertex 3 */
             obj->vertices[idx+2].x = v3[0];
@@ -90,6 +92,7 @@ stl_object_t* stl_load(const char* filename) {
             obj->vertices[idx+2].nx = normal[0];
             obj->vertices[idx+2].ny = normal[1];
             obj->vertices[idx+2].nz = normal[2];
+            obj->vertices[idx+2].attr = attr;
         }
         
         fclose(f);
@@ -144,6 +147,7 @@ stl_object_t* stl_load(const char* filename) {
                     obj->vertices[v_idx].nx = nx;
                     obj->vertices[v_idx].ny = ny;
                     obj->vertices[v_idx].nz = nz;
+                    obj->vertices[v_idx].attr = 0;
                     v_idx++;
                 }
             }

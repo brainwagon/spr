@@ -54,6 +54,7 @@ gcc test.c spr.c -o test_spr -lm
 *   **Right Mouse Drag**: Pan
 *   **Mouse Wheel**: Zoom
 *   **'f' Key**: Toggle FPS display
+*   **'c' Key**: Toggle Color Mode (Grey / Red)
 *   **1-4 Keys**: Switch Shaders (Constant, Matte, Plastic, Metal)
 
 ## Project Structure

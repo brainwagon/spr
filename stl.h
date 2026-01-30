@@ -7,6 +7,7 @@
 typedef struct {
     float x, y, z;
     float nx, ny, nz; /* Normal for this vertex (or face) */
+    uint16_t attr;    /* STL 16-bit attribute (often color) */
 } stl_vertex_t;
 
 typedef struct {

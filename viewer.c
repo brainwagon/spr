@@ -143,6 +143,7 @@ int main(int argc, char* argv[]) {
     int show_fps = 1;
     int frame_count = 0;
     int current_fps = 0;
+    int color_mode = 0; /* 0: Grey, 1: Red */
     double current_render_ms = 0.0;
     double accumulated_render_ms = 0.0;
     uint32_t last_time = SDL_GetTicks();
@@ -158,6 +159,7 @@ int main(int argc, char* argv[]) {
                 switch (e.key.keysym.sym) {
                     case SDLK_ESCAPE: running = 0; break;
                     case SDLK_f: show_fps = !show_fps; break;
+                    case SDLK_c: color_mode = !color_mode; break;
                     case SDLK_1: current_shader = SHADER_CONSTANT; break;
                     case SDLK_2: current_shader = SHADER_MATTE; break;
                     case SDLK_3: current_shader = SHADER_PLASTIC; break;
@@ -226,43 +228,36 @@ int main(int argc, char* argv[]) {
         spr_shader_uniforms_t u;
         u.mvp = spr_mat4_mul(spr_get_projection_matrix(ctx), spr_get_modelview_matrix(ctx));
         u.model = spr_get_modelview_matrix(ctx);
-        u.light_dir = (vec3_t){0.5f, 1.0f, 1.0f}; 
-        u.light_dir = sh_normalize(u.light_dir);
-        u.eye_pos = eye; /* Simplified (in local view space eye is 0,0,dist if not rotated?) 
-                            Actually spr_lookat transforms world to view. 
-                            Shader expects World Space or View Space? 
-                            My plastic shader did N dot L in whatever space N and L were in.
-                            Here L is fixed (0.5, 1, 1).
-                            Model matrix transforms N to World Space (if ModelView includes View, it transforms to View).
-                            Wait, spr_get_modelview_matrix returns View * Model.
-                            So normals are in View Space.
-                            So L should be in View Space too if we want fixed light relative to camera?
-                            Or if L is world space light, we need to transform it by View matrix?
-                            For "Headlight", L is fixed relative to Camera.
-                            If I use `spr_get_modelview_matrix` for `u.model`, then N is in View Space.
-                            So if I define L as (0.5, 1, 1), it is fixed relative to Camera (View Space).
-                            This is consistent with "Plastic" behavior I had. */
+                u.light_dir = (vec3_t){0.5f, 1.0f, 1.0f}; 
+                u.light_dir = sh_normalize(u.light_dir);
+                u.eye_pos = eye; 
+                
+                if (color_mode == 0) {
+                    spr_uniforms_set_color(&u, 0.7f, 0.7f, 0.7f, 1.0f); /* Grey */
+                } else {
+                    spr_uniforms_set_color(&u, 0.8f, 0.2f, 0.2f, 1.0f); /* Red */
+                }
+                
+                u.roughness = 32.0f;
         
-        u.color = (vec4_t){0.7f, 0.7f, 0.7f, 1.0f}; /* Default Grey */
-        u.roughness = 32.0f;
-
-        switch (current_shader) {
-            case SHADER_CONSTANT:
-                spr_set_program(ctx, spr_shader_constant_vs, spr_shader_constant_fs, &u);
-                break;
-            case SHADER_MATTE:
-                spr_set_program(ctx, spr_shader_matte_vs, spr_shader_matte_fs, &u);
-                break;
-            case SHADER_PLASTIC:
-                spr_set_program(ctx, spr_shader_plastic_vs, spr_shader_plastic_fs, &u);
-                break;
-            case SHADER_METAL:
-                u.color = (vec4_t){0.95f, 0.85f, 0.5f, 1.0f}; /* Gold tint */
-                u.roughness = 64.0f;
-                spr_set_program(ctx, spr_shader_metal_vs, spr_shader_metal_fs, &u);
-                break;
-        }
-        
+                switch (current_shader) {
+                    case SHADER_CONSTANT:
+                        spr_set_program(ctx, spr_shader_constant_vs, spr_shader_constant_fs, &u);
+                        break;
+                    case SHADER_MATTE:
+                        spr_set_program(ctx, spr_shader_matte_vs, spr_shader_matte_fs, &u);
+                        break;
+                    case SHADER_PLASTIC:
+                        spr_set_program(ctx, spr_shader_plastic_vs, spr_shader_plastic_fs, &u);
+                        break;
+                    case SHADER_METAL:
+                        if (color_mode == 0) {
+                            spr_uniforms_set_color(&u, 0.95f, 0.85f, 0.5f, 1.0f); /* Gold override */
+                        }
+                        u.roughness = 64.0f;
+                        spr_set_program(ctx, spr_shader_metal_vs, spr_shader_metal_fs, &u);
+                        break;
+                }        
         /* Draw */
         spr_draw_triangles(ctx, mesh->vertex_count / 3, mesh->vertices, sizeof(stl_vertex_t));
         

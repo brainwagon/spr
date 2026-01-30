@@ -29,4 +29,7 @@ spr_color_t spr_shader_plastic_fs(void* user_data, const spr_vertex_out_t* inter
 void spr_shader_metal_vs(void* user_data, const void* input_vertex, spr_vertex_out_t* out);
 spr_color_t spr_shader_metal_fs(void* user_data, const spr_vertex_out_t* interpolated);
 
+/* --- Helpers --- */
+void spr_uniforms_set_color(spr_shader_uniforms_t* u, float r, float g, float b, float a);
+
 #endif /* SPR_SHADERS_H */
