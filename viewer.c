@@ -300,13 +300,17 @@ int main(int argc, char* argv[]) {
         if (SDL_GetTicks() - last_time >= 1000) {
             current_fps = frame_count;
             current_render_ms = accumulated_render_ms / frame_count;
+            
+            spr_stats_t stats = spr_get_stats(ctx);
+            
             frame_count = 0;
             accumulated_render_ms = 0.0;
             last_time = SDL_GetTicks();
             if (show_fps) {
-                char title[128];
-                snprintf(title, sizeof(title), "SPR STL Viewer [%s] [FPS: %d] [Render: %.2f ms] [Cull: %s]", 
-                    get_shader_name(current_shader), current_fps, current_render_ms, cull_mode ? "ON" : "OFF");
+                char title[256];
+                snprintf(title, sizeof(title), "SPR STL Viewer [%s] [FPS: %d] [Render: %.2f ms] [Cull: %s] [Frags: %d] [Chunks: %d]", 
+                    get_shader_name(current_shader), current_fps, current_render_ms, cull_mode ? "ON" : "OFF",
+                    stats.peak_fragments, stats.total_chunks);
                 SDL_SetWindowTitle(window, title);
             } else {
                 SDL_SetWindowTitle(window, "SPR STL Viewer");

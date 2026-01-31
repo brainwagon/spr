@@ -55,6 +55,8 @@ struct spr_context_t {
     size_t pool_cursor;               /* Index in current chunk */
 
     int cull_backface;
+    
+    spr_stats_t stats;
 };
 
 /* --- Matrix Math Helpers --- */
@@ -137,33 +139,44 @@ static float edge_function(vec2_t a, vec2_t b, vec2_t c) {
 
 /* --- Internal Helpers --- */
 static spr_fragment_t* alloc_fragment(spr_context_t* ctx) {
+    spr_fragment_t* node = NULL;
+
     /* 1. Try Free List */
     if (ctx->free_list) {
-        spr_fragment_t* node = ctx->free_list;
+        node = ctx->free_list;
         ctx->free_list = node->next;
-        return node;
     }
-    
     /* 2. Try Current Chunk */
-    if (ctx->chunk_head && ctx->pool_cursor < SPR_CHUNK_SIZE) {
-        return &ctx->chunk_head->fragments[ctx->pool_cursor++];
+    else if (ctx->chunk_head && ctx->pool_cursor < SPR_CHUNK_SIZE) {
+        node = &ctx->chunk_head->fragments[ctx->pool_cursor++];
     }
-    
     /* 3. Allocate New Chunk */
-    spr_fragment_chunk_t* new_chunk = (spr_fragment_chunk_t*)malloc(sizeof(spr_fragment_chunk_t));
-    if (!new_chunk) return NULL;
-    
-    new_chunk->next = ctx->chunk_head;
-    ctx->chunk_head = new_chunk;
-    ctx->pool_cursor = 0;
-    
-    return &new_chunk->fragments[ctx->pool_cursor++];
+    else {
+        spr_fragment_chunk_t* new_chunk = (spr_fragment_chunk_t*)malloc(sizeof(spr_fragment_chunk_t));
+        if (!new_chunk) return NULL;
+        
+        new_chunk->next = ctx->chunk_head;
+        ctx->chunk_head = new_chunk;
+        ctx->pool_cursor = 0;
+        ctx->stats.total_chunks++;
+        
+        node = &new_chunk->fragments[ctx->pool_cursor++];
+    }
+
+    if (node) {
+        ctx->stats.active_fragments++;
+        if (ctx->stats.active_fragments > ctx->stats.peak_fragments) {
+            ctx->stats.peak_fragments = ctx->stats.active_fragments;
+        }
+    }
+    return node;
 }
 
 static void free_fragment(spr_context_t* ctx, spr_fragment_t* node) {
     if (!node) return;
     node->next = ctx->free_list;
     ctx->free_list = node;
+    ctx->stats.active_fragments--;
 }
 
 static void insert_fragment(spr_context_t* ctx, int idx, float z, spr_fs_output_t out) {
@@ -619,6 +632,10 @@ spr_context_t* spr_init(int width, int height) {
     ctx->chunk_head = NULL;
     ctx->free_list = NULL;
     ctx->pool_cursor = SPR_CHUNK_SIZE; /* Force new chunk on first alloc */
+    
+    ctx->stats.active_fragments = 0;
+    ctx->stats.peak_fragments = 0;
+    ctx->stats.total_chunks = 0;
 
     if (!ctx->fb.color_buffer || !ctx->fragment_heads) {
         if (ctx->fb.color_buffer) free(ctx->fb.color_buffer);
@@ -885,7 +902,19 @@ void spr_clear(spr_context_t* ctx, uint32_t color, float depth) {
         }
         ctx->chunk_head->next = NULL;
         ctx->pool_cursor = 0;
+        ctx->stats.total_chunks = 1;
+    } else {
+        ctx->stats.total_chunks = 0;
     }
+    
+    ctx->stats.active_fragments = 0;
+    ctx->stats.peak_fragments = 0;
+}
+
+spr_stats_t spr_get_stats(spr_context_t* ctx) {
+    if (ctx) return ctx->stats;
+    spr_stats_t empty = {0};
+    return empty;
 }
 
 uint32_t* spr_get_color_buffer(spr_context_t* ctx) {

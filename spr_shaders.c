@@ -72,7 +72,6 @@ static vec3_t sh_reflect(vec3_t i, vec3_t n) {
 }
 
 static float sh_max(float a, float b) { return (a > b) ? a : b; }
-static float sh_min(float a, float b) { return (a < b) ? a : b; }
 
 /* --- Constant Shader --- */
 void spr_shader_constant_vs(void* user_data, const void* input_vertex, spr_vertex_out_t* out) {
