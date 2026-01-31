@@ -24,13 +24,19 @@ Since the current input format (`stl_vertex_t`) does not have color info, we mus
 *   Modify `spr_shader_*_vs` to set `out->color = (1.0, 1.0, 1.0, 1.0)` (White).
 *   This ensures that if no color is provided, the shaders behave as they do now (purely uniform-driven).
 
-### 3. Future Input Expansion
-To actually *feed* varying colors to the triangle:
-*   **API**: The user can define a custom vertex structure with color.
-*   **Custom Shader**: The user would write a custom VS to copy `input->r/g/b` to `out->color`.
-*   **STL 16-bit Attribute**: We could optionally map the STL "attribute byte count" (often unused) to a color table or value in a specialized shader, effectively getting "color from the triangle".
+### 3. STL Attribute Mapping (Per-Triangle Color)
+Binary STL files contain a 2-byte "attribute byte count" per triangle. We will update the `stl_loader` and shaders to support the "VisCAM/Magics" standard for storing color in these bytes:
+*   **Format**: 1 bit (ignored/used), 5 bits Red, 5 bits Green, 5 bits Blue.
+*   **Vertex Shader**: Will decode this 16-bit value into `out->color`.
+
+### 4. Explicit Base Color API
+To make setting the base color easier for the user without manual struct manipulation, we will add:
+*   **Helper**: `void spr_uniforms_set_color(spr_shader_uniforms_t* u, float r, float g, float b, float a);`
+*   This ensures the "UniformColor" part of the `Uniform * Vertex` equation is easily accessible.
 
 ## Execution Plan
-1.  Modify `spr_shaders.c` to initialize `out->color` in all Vertex Shaders.
-2.  Modify `spr_shaders.c` to modulate result by `interpolated->color` in all Fragment Shaders.
-3.  (Optional) Verify by hardcoding a test color (e.g. Red) in the VS to see if it renders Red.
+1.  Modify `stl.h/c` to store the 16-bit attribute per triangle.
+2.  Modify `spr_shaders.c` to initialize `out->color` in all Vertex Shaders (defaulting to White if attribute is 0, or decoding the STL attribute).
+3.  Modify `spr_shaders.c` to modulate result by `interpolated->color` in all Fragment Shaders.
+4.  Add the `spr_uniforms_set_color` helper to `spr_shaders.h`.
+5.  Update `viewer.c` to allow the user to override the mesh color via keys (e.g. 'c' to cycle random colors).

@@ -17,7 +17,8 @@ A minimalist C library for software-based 3D rendering, accompanied by a fully f
 ### STL Viewer (`viewer.c`)
 *   **Interactive**: Real-time orbit, pan, zoom, and light rotation using **SDL2**.
 *   **Shaders**: Includes a library of common shaders (`spr_shaders.h`): **Constant**, **Matte**, **Plastic**, and **Metal**.
-*   **Format Support**: Loads both Binary and ASCII `.stl` files, including support for 15-bit color attributes.
+*   **Format Support**: Loads both Binary and ASCII `.stl` files.
+    *   **Color Support**: Reads per-triangle 15-bit RGB color attributes (VisCAM/SolidView standard).
 
 ## Prerequisites
 
@@ -46,6 +47,13 @@ make test_spr
 ```bash
 ./viewer stl/bracket.stl [-simd | -cpu]
 ```
+
+**Available Models**:
+*   `stl/bracket.stl` - A simple mechanical bracket.
+*   `stl/3DBenchy.stl` - The famous printer benchmark.
+*   `stl/dome.stl` - A geodesic dome (good for transparency tests).
+*   `stl/tire.stl` - A complex tire tread pattern.
+*   `stl/wheel.stl` - A wheel rim.
 
 **Controls**:
 *   **Left Mouse Drag**: Rotate camera (Orbit)

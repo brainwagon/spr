@@ -12,6 +12,13 @@ void spr_uniforms_set_color(spr_shader_uniforms_t* u, float r, float g, float b,
     u->color.w = a;
 }
 
+void spr_uniforms_set_opacity(spr_shader_uniforms_t* u, float r, float g, float b) {
+    if (!u) return;
+    u->opacity.x = r;
+    u->opacity.y = g;
+    u->opacity.z = b;
+}
+
 void spr_uniforms_set_light_dir(spr_shader_uniforms_t* u, float x, float y, float z) {
     if (!u) return;
     /* We normalize it here for safety, though shaders also normalize */
@@ -35,15 +42,7 @@ static void decode_stl_color(uint16_t attr, vec4_t* out_color) {
         return;
     }
     
-    /* Assume 15-bit RGB (0BBBBBGGGGGRRRRR) or similar */
-    /* Some formats use bit 15 as 'valid' flag. We'll ignore it and mask 0x7FFF */
-    
-    /* Standard VisCAM/SolidView:
-       Bit 0-4: Red (0-31)
-       Bit 5-9: Green (0-31)
-       Bit 10-14: Blue (0-31)
-    */
-    
+    /* Assume 15-bit RGB (0BBBBBGGGGGRRRRR) */
     float r = (float)(attr & 0x1F) / 31.0f;
     float g = (float)((attr >> 5) & 0x1F) / 31.0f;
     float b = (float)((attr >> 10) & 0x1F) / 31.0f;
@@ -82,26 +81,25 @@ void spr_shader_constant_vs(void* user_data, const void* input_vertex, spr_verte
     
     vec4_t pos = {v->x, v->y, v->z, 1.0f};
     out->position = spr_mat4_mul_vec4(u->mvp, pos);
-    
-    /* Decode vertex color */
     decode_stl_color(v->attr, &out->color);
 }
 
-spr_color_t spr_shader_constant_fs(void* user_data, const spr_vertex_out_t* interpolated) {
+spr_fs_output_t spr_shader_constant_fs(void* user_data, const spr_vertex_out_t* interpolated) {
     spr_shader_uniforms_t* u = (spr_shader_uniforms_t*)user_data;
+    spr_fs_output_t out;
     
-    /* Combine Uniform Color * Vertex Color */
+    /* Result = (Uniform * Vertex) */
     float r = u->color.x * interpolated->color.x;
     float g = u->color.y * interpolated->color.y;
     float b = u->color.z * interpolated->color.z;
-    float a = u->color.w * interpolated->color.w;
     
-    spr_color_t c;
-    c.r = (uint8_t)(sh_min(r, 1.0f) * 255.0f);
-    c.g = (uint8_t)(sh_min(g, 1.0f) * 255.0f);
-    c.b = (uint8_t)(sh_min(b, 1.0f) * 255.0f);
-    c.a = (uint8_t)(sh_min(a, 1.0f) * 255.0f);
-    return c;
+    /* Premultiply by opacity */
+    out.color.x = r * u->opacity.x;
+    out.color.y = g * u->opacity.y;
+    out.color.z = b * u->opacity.z;
+    out.opacity = u->opacity;
+    
+    return out;
 }
 
 /* --- Matte (Lambert) Shader --- */
@@ -119,8 +117,9 @@ void spr_shader_matte_vs(void* user_data, const void* input_vertex, spr_vertex_o
     decode_stl_color(v->attr, &out->color);
 }
 
-spr_color_t spr_shader_matte_fs(void* user_data, const spr_vertex_out_t* interpolated) {
+spr_fs_output_t spr_shader_matte_fs(void* user_data, const spr_vertex_out_t* interpolated) {
     spr_shader_uniforms_t* u = (spr_shader_uniforms_t*)user_data;
+    spr_fs_output_t out;
     
     vec3_t N = sh_normalize(interpolated->normal);
     vec3_t L = sh_normalize(u->light_dir);
@@ -129,17 +128,17 @@ spr_color_t spr_shader_matte_fs(void* user_data, const spr_vertex_out_t* interpo
     float amb = 0.1f;
     float intensity = diff + amb;
     
-    /* Base Color = Uniform * Vertex */
     float br = u->color.x * interpolated->color.x;
     float bg = u->color.y * interpolated->color.y;
     float bb = u->color.z * interpolated->color.z;
     
-    spr_color_t c;
-    c.r = (uint8_t)(sh_min(br * intensity, 1.0f) * 255.0f);
-    c.g = (uint8_t)(sh_min(bg * intensity, 1.0f) * 255.0f);
-    c.b = (uint8_t)(sh_min(bb * intensity, 1.0f) * 255.0f);
-    c.a = 255;
-    return c;
+    /* Premultiply */
+    out.color.x = (br * intensity) * u->opacity.x;
+    out.color.y = (bg * intensity) * u->opacity.y;
+    out.color.z = (bb * intensity) * u->opacity.z;
+    out.opacity = u->opacity;
+    
+    return out;
 }
 
 /* --- Plastic (Phong/Blinn) Shader --- */
@@ -147,8 +146,9 @@ void spr_shader_plastic_vs(void* user_data, const void* input_vertex, spr_vertex
     spr_shader_matte_vs(user_data, input_vertex, out);
 }
 
-spr_color_t spr_shader_plastic_fs(void* user_data, const spr_vertex_out_t* interpolated) {
+spr_fs_output_t spr_shader_plastic_fs(void* user_data, const spr_vertex_out_t* interpolated) {
     spr_shader_uniforms_t* u = (spr_shader_uniforms_t*)user_data;
+    spr_fs_output_t out;
     
     vec3_t N = sh_normalize(interpolated->normal);
     vec3_t L = sh_normalize(u->light_dir);
@@ -168,16 +168,20 @@ spr_color_t spr_shader_plastic_fs(void* user_data, const spr_vertex_out_t* inter
     float bg = u->color.y * interpolated->color.y;
     float bb = u->color.z * interpolated->color.z;
     
+    /* Specular is additive and usually NOT multiplied by opacity in "glass" models (highlights remain bright),
+       but for standard "transparent plastic", it usually fades. 
+       Let's fade everything for consistency with "Over" operator. */
+    
     float r = br * (diff + amb) + spec * 0.4f;
     float g = bg * (diff + amb) + spec * 0.4f;
     float b = bb * (diff + amb) + spec * 0.4f;
     
-    spr_color_t c;
-    c.r = (uint8_t)(sh_min(r, 1.0f) * 255.0f);
-    c.g = (uint8_t)(sh_min(g, 1.0f) * 255.0f);
-    c.b = (uint8_t)(sh_min(b, 1.0f) * 255.0f);
-    c.a = 255;
-    return c;
+    out.color.x = r * u->opacity.x;
+    out.color.y = g * u->opacity.y;
+    out.color.z = b * u->opacity.z;
+    out.opacity = u->opacity;
+    
+    return out;
 }
 
 /* --- Metal Shader --- */
@@ -185,8 +189,9 @@ void spr_shader_metal_vs(void* user_data, const void* input_vertex, spr_vertex_o
     spr_shader_matte_vs(user_data, input_vertex, out);
 }
 
-spr_color_t spr_shader_metal_fs(void* user_data, const spr_vertex_out_t* interpolated) {
+spr_fs_output_t spr_shader_metal_fs(void* user_data, const spr_vertex_out_t* interpolated) {
     spr_shader_uniforms_t* u = (spr_shader_uniforms_t*)user_data;
+    spr_fs_output_t out;
     
     vec3_t N = sh_normalize(interpolated->normal);
     vec3_t L = sh_normalize(u->light_dir);
@@ -213,10 +218,10 @@ spr_color_t spr_shader_metal_fs(void* user_data, const spr_vertex_out_t* interpo
     float g = (bg * diff * diffuse_factor) + (amb * bg) + (spec * bg * specular_factor);
     float b = (bb * diff * diffuse_factor) + (amb * bb) + (spec * bb * specular_factor);
     
-    spr_color_t c;
-    c.r = (uint8_t)(sh_min(r, 1.0f) * 255.0f);
-    c.g = (uint8_t)(sh_min(g, 1.0f) * 255.0f);
-    c.b = (uint8_t)(sh_min(b, 1.0f) * 255.0f);
-    c.a = 255;
-    return c;
+    out.color.x = r * u->opacity.x;
+    out.color.y = g * u->opacity.y;
+    out.color.z = b * u->opacity.z;
+    out.opacity = u->opacity;
+    
+    return out;
 }
