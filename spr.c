@@ -13,7 +13,8 @@
 #endif
 
 #define MAX_MATRIX_STACK 32
-#define FRAGMENTS_PER_PIXEL_AVG 8
+#define SPR_CHUNK_SIZE 4096
+#define SPR_OPACITY_THRESHOLD 0.999f
 
 typedef struct spr_fragment_t {
     float z;
@@ -21,6 +22,11 @@ typedef struct spr_fragment_t {
     vec3_t opacity;
     struct spr_fragment_t* next;
 } spr_fragment_t;
+
+typedef struct spr_fragment_chunk_t {
+    spr_fragment_t fragments[SPR_CHUNK_SIZE];
+    struct spr_fragment_chunk_t* next;
+} spr_fragment_chunk_t;
 
 typedef void (*spr_rasterize_t)(spr_context_t* ctx, const spr_vertex_out_t* v0, const spr_vertex_out_t* v1, const spr_vertex_out_t* v2);
 
@@ -43,9 +49,10 @@ struct spr_context_t {
 
     /* A-Buffer State */
     spr_fragment_t** fragment_heads; /* Array of pointers [width * height] */
-    spr_fragment_t* fragment_pool;   /* Huge array of nodes */
-    size_t pool_capacity;
-    size_t pool_cursor;
+    
+    spr_fragment_chunk_t* chunk_head; /* Linked list of memory blocks */
+    spr_fragment_t* free_list;        /* Recycled fragments */
+    size_t pool_cursor;               /* Index in current chunk */
 
     int cull_backface;
 };
@@ -130,21 +137,124 @@ static float edge_function(vec2_t a, vec2_t b, vec2_t c) {
 
 /* --- Internal Helpers --- */
 static spr_fragment_t* alloc_fragment(spr_context_t* ctx) {
-    if (ctx->pool_cursor >= ctx->pool_capacity) return NULL;
-    return &ctx->fragment_pool[ctx->pool_cursor++];
+    /* 1. Try Free List */
+    if (ctx->free_list) {
+        spr_fragment_t* node = ctx->free_list;
+        ctx->free_list = node->next;
+        return node;
+    }
+    
+    /* 2. Try Current Chunk */
+    if (ctx->chunk_head && ctx->pool_cursor < SPR_CHUNK_SIZE) {
+        return &ctx->chunk_head->fragments[ctx->pool_cursor++];
+    }
+    
+    /* 3. Allocate New Chunk */
+    spr_fragment_chunk_t* new_chunk = (spr_fragment_chunk_t*)malloc(sizeof(spr_fragment_chunk_t));
+    if (!new_chunk) return NULL;
+    
+    new_chunk->next = ctx->chunk_head;
+    ctx->chunk_head = new_chunk;
+    ctx->pool_cursor = 0;
+    
+    return &new_chunk->fragments[ctx->pool_cursor++];
+}
+
+static void free_fragment(spr_context_t* ctx, spr_fragment_t* node) {
+    if (!node) return;
+    node->next = ctx->free_list;
+    ctx->free_list = node;
 }
 
 static void insert_fragment(spr_context_t* ctx, int idx, float z, spr_fs_output_t out) {
-    spr_fragment_t* node = alloc_fragment(ctx);
-    if (!node) return; 
+    spr_fragment_t* new_frag;
+    spr_fragment_t* curr;
+    spr_fragment_t* prev;
     
-    node->z = z;
-    node->color = out.color;
-    node->opacity = out.opacity;
+    /* Accumulator for opacity (Front-to-Back) */
+    /* Accum = Accum + (1 - Accum) * Opacity */
+    vec3_t total_opacity = {0.0f, 0.0f, 0.0f};
     
-    /* Insert at head (fastest) - sorting happens in resolve */
-    node->next = ctx->fragment_heads[idx];
-    ctx->fragment_heads[idx] = node;
+    /* 1. Check for Full Occlusion before insertion point */
+    curr = ctx->fragment_heads[idx];
+    prev = NULL;
+    
+    /* Sorted Insertion: Ascending Z (Near -> Far) */
+    while (curr && curr->z < z) {
+        /* Update opacity with current node */
+        total_opacity.x += (1.0f - total_opacity.x) * curr->opacity.x;
+        total_opacity.y += (1.0f - total_opacity.y) * curr->opacity.y;
+        total_opacity.z += (1.0f - total_opacity.z) * curr->opacity.z;
+        
+        /* Early Out: Occluded? */
+        if (spr_min3(total_opacity.x, total_opacity.y, total_opacity.z) > SPR_OPACITY_THRESHOLD) {
+            /* We are hidden behind existing fragments. Discard. */
+            return;
+        }
+        
+        prev = curr;
+        curr = curr->next;
+    }
+    
+    /* 2. Insert New Fragment */
+    new_frag = alloc_fragment(ctx);
+    if (!new_frag) return;
+    
+    new_frag->z = z;
+    new_frag->color = out.color;
+    new_frag->opacity = out.opacity;
+    
+    if (prev) {
+        prev->next = new_frag;
+    } else {
+        ctx->fragment_heads[idx] = new_frag;
+    }
+    new_frag->next = curr;
+    
+    /* 3. Update Opacity with New Fragment */
+    total_opacity.x += (1.0f - total_opacity.x) * new_frag->opacity.x;
+    total_opacity.y += (1.0f - total_opacity.y) * new_frag->opacity.y;
+    total_opacity.z += (1.0f - total_opacity.z) * new_frag->opacity.z;
+    
+    /* 4. Cull Fragments Behind */
+    if (spr_min3(total_opacity.x, total_opacity.y, total_opacity.z) > SPR_OPACITY_THRESHOLD) {
+        /* Everything after new_frag is occluded */
+        spr_fragment_t* to_free = new_frag->next;
+        new_frag->next = NULL;
+        
+        while (to_free) {
+            spr_fragment_t* next = to_free->next;
+            free_fragment(ctx, to_free);
+            to_free = next;
+        }
+        return;
+    }
+    
+    /* 5. Continue Traversal (if we didn't cull everything immediately) */
+    /* Note: If we inserted, we need to check if SUBSEQUENT fragments cause occlusion */
+    /* Only need to continue if there were fragments after us */
+    prev = new_frag;
+    curr = new_frag->next;
+    
+    while (curr) {
+        total_opacity.x += (1.0f - total_opacity.x) * curr->opacity.x;
+        total_opacity.y += (1.0f - total_opacity.y) * curr->opacity.y;
+        total_opacity.z += (1.0f - total_opacity.z) * curr->opacity.z;
+        
+        if (spr_min3(total_opacity.x, total_opacity.y, total_opacity.z) > SPR_OPACITY_THRESHOLD) {
+            /* Cull remaining */
+            spr_fragment_t* to_free = curr->next;
+            curr->next = NULL;
+             while (to_free) {
+                spr_fragment_t* next = to_free->next;
+                free_fragment(ctx, to_free);
+                to_free = next;
+            }
+            return;
+        }
+        prev = curr;
+        curr = curr->next;
+    }
 }
 
 void spr_draw_triangle_2d_flat(spr_context_t* ctx, vec2_t v0, vec2_t v1, vec2_t v2, uint32_t color) {
@@ -500,22 +610,20 @@ spr_context_t* spr_init(int width, int height) {
     ctx->fb.height = height;
     
     ctx->fb.color_buffer = (uint32_t*)malloc(width * height * sizeof(uint32_t));
-    /* Depth buffer no longer needed, using A-buffer logic, but maybe keep for legacy? 
-       Actually, removing it saves memory. */
     ctx->fb.depth_buffer = NULL; 
 
     /* A-Buffer Init */
     ctx->fragment_heads = (spr_fragment_t**)calloc(width * height, sizeof(spr_fragment_t*));
     
-    /* Pool: Allow average of 8 layers */
-    ctx->pool_capacity = width * height * FRAGMENTS_PER_PIXEL_AVG;
-    ctx->fragment_pool = (spr_fragment_t*)malloc(ctx->pool_capacity * sizeof(spr_fragment_t));
-    ctx->pool_cursor = 0;
+    /* Dynamic Pool Init */
+    ctx->chunk_head = NULL;
+    ctx->free_list = NULL;
+    ctx->pool_cursor = SPR_CHUNK_SIZE; /* Force new chunk on first alloc */
 
-    if (!ctx->fb.color_buffer || !ctx->fragment_heads || !ctx->fragment_pool) {
+    if (!ctx->fb.color_buffer || !ctx->fragment_heads) {
         if (ctx->fb.color_buffer) free(ctx->fb.color_buffer);
         if (ctx->fragment_heads) free(ctx->fragment_heads);
-        if (ctx->fragment_pool) free(ctx->fragment_pool);
+        /* chunks are null, nothing to free */
         free(ctx);
         return NULL;
     }
@@ -707,7 +815,15 @@ void spr_shutdown(spr_context_t* ctx) {
     if (ctx) {
         if (ctx->fb.color_buffer) free(ctx->fb.color_buffer);
         if (ctx->fragment_heads) free(ctx->fragment_heads);
-        if (ctx->fragment_pool) free(ctx->fragment_pool);
+        
+        /* Free Chunks */
+        spr_fragment_chunk_t* chunk = ctx->chunk_head;
+        while (chunk) {
+            spr_fragment_chunk_t* next = chunk->next;
+            free(chunk);
+            chunk = next;
+        }
+        
         free(ctx);
     }
 }
@@ -726,9 +842,50 @@ void spr_clear(spr_context_t* ctx, uint32_t color, float depth) {
         ctx->fb.color_buffer[i] = color;
     }
     
-    /* Reset A-Buffer */
+    /* Reset A-Buffer Head Pointers */
+    /* We DO NOT free fragments here to keep them hot in the free list/pool */
+    /* We just clear the heads, effectively "freeing" the linked lists into the void? */
+    /* Wait, if we just clear heads, the fragments are leaked (lost reference). */
+    /* We MUST return them to the free list or reset the pool cursor. */
+    
+    /* Strategy: Reset Pool? */
+    /* If we use chunks + free list, "Reset" is complex because the list is scattered. */
+    /* Option 1: Walk every head and free_fragment() every node. (Slow but correct for free list) */
+    /* Option 2: Just reset pool_cursor = 0 and free_list = NULL and reuse chunks from scratch? */
+    /* If we do Option 2, we must ensure we don't leak "next" pointers in the chunks? No, if we treat chunks as raw memory, it's fine. */
+    /* However, Option 2 is much faster: O(1) vs O(Pixels * Fragments). */
+    /* Let's go with Option 2: "Reset World". */
+    /* We keep the chunks allocated, but treat them as empty. */
+    
     memset(ctx->fragment_heads, 0, pixel_count * sizeof(spr_fragment_t*));
+    
+    /* Reset allocator */
+    ctx->free_list = NULL;
     ctx->pool_cursor = 0;
+    /* Note: We reuse the *first* chunk. What about subsequent chunks? */
+    /* If we reset pool_cursor=0, we are only reusing the *first* chunk pointed to by chunk_head? */
+    /* No, chunk_head points to the *latest* chunk (LIFO). */
+    /* If we reset pool_cursor to 0, we start overwriting the *latest* chunk. */
+    /* The other chunks are still linked via chunk_head->next. */
+    /* This implies we only reuse the *latest* chunk and "leak" the capacity of older chunks until shutdown? */
+    /* Or do we want to free all chunks except one? */
+    
+    /* Better approach for clear: */
+    /* 1. Free all chunks except one (or keep them all but reset cursor logic?) */
+    /* Keeping them all but managing cursors for *each* chunk is complex. */
+    /* Simplest correct way: Free all chunks except head, reset head. */
+    
+    /* Let's iterate and free 'next' chunks, keeping 'chunk_head' as the only one. */
+    if (ctx->chunk_head) {
+        spr_fragment_chunk_t* c = ctx->chunk_head->next;
+        while (c) {
+            spr_fragment_chunk_t* n = c->next;
+            free(c);
+            c = n;
+        }
+        ctx->chunk_head->next = NULL;
+        ctx->pool_cursor = 0;
+    }
 }
 
 uint32_t* spr_get_color_buffer(spr_context_t* ctx) {
@@ -837,58 +994,61 @@ void spr_resolve(spr_context_t* ctx) {
         spr_fragment_t* head = ctx->fragment_heads[i];
         if (!head) continue; /* Keep background */
         
-        /* Sort list by Z (Descending / Farthest first) */
-        /* Insertion sort on linked list */
-        spr_fragment_t* sorted = NULL;
+        /* List is already sorted Near-to-Far (Ascending Z) by insert_fragment */
+        
+        /* Extract Background from buffer */
+        uint32_t bg_packed = ctx->fb.color_buffer[i];
+        float bg_r = (bg_packed & 0xFF) / 255.0f;
+        float bg_g = ((bg_packed >> 8) & 0xFF) / 255.0f;
+        float bg_b = ((bg_packed >> 16) & 0xFF) / 255.0f;
+        
+        /* Front-to-Back Accumulation */
+        /* acc_color: Accumulated color of the layers */
+        /* acc_opacity: Accumulated opacity of the layers */
+        vec3_t acc_color = {0.0f, 0.0f, 0.0f};
+        vec3_t acc_opacity = {0.0f, 0.0f, 0.0f};
+        
         spr_fragment_t* curr = head;
         while (curr) {
-            spr_fragment_t* next = curr->next;
+            /* Front-to-Back: */
+            /* C_dst = C_dst + (1 - A_dst) * C_src */
+            /* A_dst = A_dst + (1 - A_dst) * A_src */
             
-            /* Insert curr into sorted */
-            if (!sorted || curr->z >= sorted->z) {
-                curr->next = sorted;
-                sorted = curr;
-            } else {
-                spr_fragment_t* s = sorted;
-                while (s->next && s->next->z > curr->z) {
-                    s = s->next;
-                }
-                curr->next = s->next;
-                s->next = curr;
+            float inv_op_r = 1.0f - acc_opacity.x;
+            float inv_op_g = 1.0f - acc_opacity.y;
+            float inv_op_b = 1.0f - acc_opacity.z;
+            
+            acc_color.x += inv_op_r * curr->color.x;
+            acc_color.y += inv_op_g * curr->color.y;
+            acc_color.z += inv_op_b * curr->color.z;
+            
+            acc_opacity.x += inv_op_r * curr->opacity.x;
+            acc_opacity.y += inv_op_g * curr->opacity.y;
+            acc_opacity.z += inv_op_b * curr->opacity.z;
+            
+            /* Early Exit if fully opaque */
+            if (spr_min3(acc_opacity.x, acc_opacity.y, acc_opacity.z) > SPR_OPACITY_THRESHOLD) {
+                break;
             }
-            curr = next;
-        }
-        
-        /* Composite Back-to-Front */
-        /* Start with Background Color */
-        /* Extract Background from buffer (assuming it was cleared) */
-        uint32_t bg_packed = ctx->fb.color_buffer[i];
-        float acc_r = (bg_packed & 0xFF) / 255.0f;
-        float acc_g = ((bg_packed >> 8) & 0xFF) / 255.0f;
-        float acc_b = ((bg_packed >> 16) & 0xFF) / 255.0f;
-        
-        curr = sorted;
-        while (curr) {
-            /* Standard Over: Out = Src + Dst * (1 - SrcAlpha) */
-            /* User said: output color is (generated * opacity). So curr->color is premultiplied */
-            
-            /* Per-channel opacity */
-            acc_r = curr->color.x + acc_r * (1.0f - curr->opacity.x);
-            acc_g = curr->color.y + acc_g * (1.0f - curr->opacity.y);
-            acc_b = curr->color.z + acc_b * (1.0f - curr->opacity.z);
             
             curr = curr->next;
         }
         
-        /* Write back */
-        if (acc_r > 1.0f) acc_r = 1.0f;
-        if (acc_g > 1.0f) acc_g = 1.0f;
-        if (acc_b > 1.0f) acc_b = 1.0f;
+        /* Composite with Background */
+        /* Final = AccColor + Background * (1 - AccOpacity) */
+        float final_r = acc_color.x + bg_r * (1.0f - acc_opacity.x);
+        float final_g = acc_color.y + bg_g * (1.0f - acc_opacity.y);
+        float final_b = acc_color.z + bg_b * (1.0f - acc_opacity.z);
+        
+        /* Clamp */
+        if (final_r > 1.0f) final_r = 1.0f;
+        if (final_g > 1.0f) final_g = 1.0f;
+        if (final_b > 1.0f) final_b = 1.0f;
         
         ctx->fb.color_buffer[i] = spr_make_color(
-            (uint8_t)(acc_r * 255.0f),
-            (uint8_t)(acc_g * 255.0f),
-            (uint8_t)(acc_b * 255.0f),
+            (uint8_t)(final_r * 255.0f),
+            (uint8_t)(final_g * 255.0f),
+            (uint8_t)(final_b * 255.0f),
             255
         );
     }
