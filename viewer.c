@@ -203,6 +203,7 @@ int main(int argc, char* argv[]) {
 
     /* Init SPR */
     spr_context_t* ctx = spr_init(win_width, win_height);
+    spr_stats_t* stats_ptr = spr_get_stats_ptr(ctx);
     spr_set_rasterizer_mode(ctx, mode);
     
     /* View State */
@@ -331,6 +332,7 @@ int main(int argc, char* argv[]) {
         
         u.eye_pos = eye; 
         u.texture_ptr = spr_tex;
+        u.stats = stats_ptr;
         
         if (color_mode == 0) {
             spr_uniforms_set_color(&u, 0.7f, 0.7f, 0.7f, 1.0f); /* Grey */
@@ -437,11 +439,14 @@ int main(int argc, char* argv[]) {
             snprintf(stats_buf, sizeof(stats_buf), "Chunks: %d", stats.total_chunks);
             draw_string_overlay(spr_get_color_buffer(ctx), win_width, win_height, 10, 46, stats_buf, col);
 
-            snprintf(stats_buf, sizeof(stats_buf), "Shader: %s", get_shader_name(current_shader));
+            snprintf(stats_buf, sizeof(stats_buf), "Tex Samples: %llu", (unsigned long long)stats.texture_samples);
             draw_string_overlay(spr_get_color_buffer(ctx), win_width, win_height, 10, 58, stats_buf, col);
+
+            snprintf(stats_buf, sizeof(stats_buf), "Shader: %s", get_shader_name(current_shader));
+            draw_string_overlay(spr_get_color_buffer(ctx), win_width, win_height, 10, 70, stats_buf, col);
             
             snprintf(stats_buf, sizeof(stats_buf), "Cull: %s", cull_mode ? "ON" : "OFF");
-            draw_string_overlay(spr_get_color_buffer(ctx), win_width, win_height, 10, 70, stats_buf, col);
+            draw_string_overlay(spr_get_color_buffer(ctx), win_width, win_height, 10, 82, stats_buf, col);
         }
         
         uint64_t end_time = SDL_GetPerformanceCounter();

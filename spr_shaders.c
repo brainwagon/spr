@@ -200,7 +200,7 @@ spr_fs_output_t spr_shader_paintedplastic_fs(void* user_data, const spr_vertex_o
     spr_fs_output_t out;
     
     /* Sample Texture */
-    vec4_t tex_col = spr_texture_sample((const spr_texture_t*)u->texture_ptr, interpolated->uv.x, interpolated->uv.y);
+    vec4_t tex_col = spr_texture_sample((const spr_texture_t*)u->texture_ptr, interpolated->uv.x, interpolated->uv.y, u->stats);
     
     /* Reuse Plastic Lighting Logic */
     vec3_t N = sh_normalize(interpolated->normal);
@@ -219,7 +219,7 @@ spr_fs_output_t spr_shader_paintedplastic_fs(void* user_data, const spr_vertex_o
     
     /* Specular Map Modulation */
     if (u->specular_map_ptr) {
-        vec4_t spec_map = spr_texture_sample((const spr_texture_t*)u->specular_map_ptr, interpolated->uv.x, interpolated->uv.y);
+        vec4_t spec_map = spr_texture_sample((const spr_texture_t*)u->specular_map_ptr, interpolated->uv.x, interpolated->uv.y, u->stats);
         spec *= spec_map.x; /* Use Red channel for intensity */
     }
     

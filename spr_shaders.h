@@ -14,6 +14,7 @@ typedef struct {
     float roughness;    /* Specular power (shininess) */
     void* texture_ptr;  /* Optional pointer to spr_texture_t (Diffuse) */
     void* specular_map_ptr; /* Optional pointer to spr_texture_t (Specular) */
+    spr_stats_t* stats; /* For tracking texture accesses */
 } spr_shader_uniforms_t;
 
 /* --- Constant (Unlit) --- */

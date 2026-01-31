@@ -113,9 +113,11 @@ typedef struct {
     int active_fragments; /* Currently allocated (not freed) */
     int peak_fragments;   /* High water mark since last clear */
     int total_chunks;     /* Number of memory chunks currently allocated */
+    uint64_t texture_samples; /* Number of texture lookups per frame */
 } spr_stats_t;
 
 spr_stats_t spr_get_stats(spr_context_t* ctx);
+spr_stats_t* spr_get_stats_ptr(spr_context_t* ctx);
 
 /* Primitive Drawing (Phase 2 testing) - Keeping for debug/internal */
 void spr_draw_triangle_2d_flat(spr_context_t* ctx, vec2_t v0, vec2_t v1, vec2_t v2, uint32_t color);

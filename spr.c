@@ -636,6 +636,7 @@ spr_context_t* spr_init(int width, int height) {
     ctx->stats.active_fragments = 0;
     ctx->stats.peak_fragments = 0;
     ctx->stats.total_chunks = 0;
+    ctx->stats.texture_samples = 0;
 
     if (!ctx->fb.color_buffer || !ctx->fragment_heads) {
         if (ctx->fb.color_buffer) free(ctx->fb.color_buffer);
@@ -909,12 +910,18 @@ void spr_clear(spr_context_t* ctx, uint32_t color, float depth) {
     
     ctx->stats.active_fragments = 0;
     ctx->stats.peak_fragments = 0;
+    ctx->stats.texture_samples = 0;
 }
 
 spr_stats_t spr_get_stats(spr_context_t* ctx) {
     if (ctx) return ctx->stats;
     spr_stats_t empty = {0};
     return empty;
+}
+
+spr_stats_t* spr_get_stats_ptr(spr_context_t* ctx) {
+    if (ctx) return &ctx->stats;
+    return NULL;
 }
 
 uint32_t* spr_get_color_buffer(spr_context_t* ctx) {
