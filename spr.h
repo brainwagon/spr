@@ -33,6 +33,13 @@ typedef struct {
     float depth; 
 } spr_vertex_out_t;
 
+/* Standard Textured Vertex Input (for OBJ/etc) */
+typedef struct {
+    vec3_t position;
+    vec3_t normal;
+    vec2_t uv;
+} spr_vertex_t;
+
 typedef struct {
     vec3_t color;   /* Premultiplied: Base * Opacity */
     vec3_t opacity; /* Transmission (0=transparent, 1=opaque) */

@@ -234,6 +234,27 @@ spr_fs_output_t spr_shader_paintedplastic_fs(void* user_data, const spr_vertex_o
     return out;
 }
 
+/* --- Textured Mesh Vertex Shader --- */
+void spr_shader_textured_vs(void* user_data, const void* input_vertex, spr_vertex_out_t* out) {
+    spr_shader_uniforms_t* u = (spr_shader_uniforms_t*)user_data;
+    const spr_vertex_t* v = (const spr_vertex_t*)input_vertex;
+    
+    /* Position */
+    vec4_t pos = {v->position.x, v->position.y, v->position.z, 1.0f};
+    out->position = spr_mat4_mul_vec4(u->mvp, pos);
+    
+    /* Normal */
+    vec4_t n4 = {v->normal.x, v->normal.y, v->normal.z, 0.0f};
+    n4 = spr_mat4_mul_vec4(u->model, n4);
+    out->normal.x = n4.x; out->normal.y = n4.y; out->normal.z = n4.z;
+    
+    /* UV */
+    out->uv = v->uv;
+    
+    /* Color (Default White) */
+    out->color.x = 1.0f; out->color.y = 1.0f; out->color.z = 1.0f; out->color.w = 1.0f;
+}
+
 /* --- Metal Shader --- */
 void spr_shader_metal_vs(void* user_data, const void* input_vertex, spr_vertex_out_t* out) {
     spr_shader_matte_vs(user_data, input_vertex, out);

@@ -31,6 +31,9 @@ spr_fs_output_t spr_shader_plastic_fs(void* user_data, const spr_vertex_out_t* i
 void spr_shader_paintedplastic_vs(void* user_data, const void* input_vertex, spr_vertex_out_t* out);
 spr_fs_output_t spr_shader_paintedplastic_fs(void* user_data, const spr_vertex_out_t* interpolated);
 
+/* --- Textured Mesh Vertex Shader (Expects spr_vertex_t) --- */
+void spr_shader_textured_vs(void* user_data, const void* input_vertex, spr_vertex_out_t* out);
+
 /* --- Metal (High Specular, Low Diffuse) --- */
 void spr_shader_metal_vs(void* user_data, const void* input_vertex, spr_vertex_out_t* out);
 spr_fs_output_t spr_shader_metal_fs(void* user_data, const spr_vertex_out_t* interpolated);
