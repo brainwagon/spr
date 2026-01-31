@@ -2,6 +2,7 @@
 #include "spr.h"
 #include "spr_shaders.h"
 #include "stl.h"
+#include "font.h"
 #include <stdio.h>
 #include <math.h>
 #include <string.h>
@@ -9,6 +10,35 @@
 /* --- Window Settings --- */
 #define WINDOW_WIDTH 800
 #define WINDOW_HEIGHT 600
+
+/* --- Text Rendering --- */
+void draw_char_overlay(uint32_t* buffer, int width, int height, int x, int y, char c, uint32_t color) {
+    int idx = (unsigned char)c;
+    if (idx < 32 || idx > 127) return;
+    idx -= 32;
+    for (int r = 0; r < 8; ++r) {
+        int py = y + r;
+        if (py < 0 || py >= height) continue;
+        uint8_t row = font8x8_basic[idx][r];
+        for (int b = 0; b < 8; ++b) {
+            int px = x + b;
+            if (px < 0 || px >= width) continue;
+            if ((row >> (7 - b)) & 1) {
+                /* Draw shadow/outline first? Nah, just simplistic overlay. */
+                buffer[py * width + px] = color;
+            }
+        }
+    }
+}
+
+void draw_string_overlay(uint32_t* buffer, int width, int height, int x, int y, const char* str, uint32_t color) {
+    while (*str) {
+        draw_char_overlay(buffer, width, height, x + 1, y + 1, *str, 0xFF000000); /* Drop shadow */
+        draw_char_overlay(buffer, width, height, x, y, *str, color);
+        x += 8;
+        str++;
+    }
+}
 
 /* --- Interaction State --- */
 typedef struct {
@@ -135,8 +165,8 @@ int main(int argc, char* argv[]) {
     
     shader_type_t current_shader = SHADER_PLASTIC;
     
-    /* FPS State */
-    int show_fps = 1;
+    /* Stats State */
+    int show_stats = 0;
     int frame_count = 0;
     int current_fps = 0;
     int color_mode = 0; /* 0: Grey, 1: Red */
@@ -156,7 +186,7 @@ int main(int argc, char* argv[]) {
             else if (e.type == SDL_KEYDOWN) {
                 switch (e.key.keysym.sym) {
                     case SDLK_ESCAPE: running = 0; break;
-                    case SDLK_f: show_fps = !show_fps; break;
+                    case SDLK_s: show_stats = !show_stats; break;
                     case SDLK_c: color_mode = !color_mode; break;
                     case SDLK_o: opacity_mode = !opacity_mode; break;
                     case SDLK_b: cull_mode = !cull_mode; break;
@@ -281,6 +311,31 @@ int main(int argc, char* argv[]) {
         /* Resolve A-Buffer */
         spr_resolve(ctx);
         
+        /* Stats Overlay */
+        if (show_stats) {
+            char stats_buf[64];
+            spr_stats_t stats = spr_get_stats(ctx);
+            uint32_t col = 0xFFFFFFFF;
+            
+            snprintf(stats_buf, sizeof(stats_buf), "FPS: %d", current_fps);
+            draw_string_overlay(spr_get_color_buffer(ctx), WINDOW_WIDTH, WINDOW_HEIGHT, 10, 10, stats_buf, col);
+
+            snprintf(stats_buf, sizeof(stats_buf), "Time: %.2f ms", current_render_ms);
+            draw_string_overlay(spr_get_color_buffer(ctx), WINDOW_WIDTH, WINDOW_HEIGHT, 10, 22, stats_buf, col);
+            
+            snprintf(stats_buf, sizeof(stats_buf), "Frags: %d", stats.peak_fragments);
+            draw_string_overlay(spr_get_color_buffer(ctx), WINDOW_WIDTH, WINDOW_HEIGHT, 10, 34, stats_buf, col);
+
+            snprintf(stats_buf, sizeof(stats_buf), "Chunks: %d", stats.total_chunks);
+            draw_string_overlay(spr_get_color_buffer(ctx), WINDOW_WIDTH, WINDOW_HEIGHT, 10, 46, stats_buf, col);
+
+            snprintf(stats_buf, sizeof(stats_buf), "Shader: %s", get_shader_name(current_shader));
+            draw_string_overlay(spr_get_color_buffer(ctx), WINDOW_WIDTH, WINDOW_HEIGHT, 10, 58, stats_buf, col);
+            
+            snprintf(stats_buf, sizeof(stats_buf), "Cull: %s", cull_mode ? "ON" : "OFF");
+            draw_string_overlay(spr_get_color_buffer(ctx), WINDOW_WIDTH, WINDOW_HEIGHT, 10, 70, stats_buf, col);
+        }
+        
         uint64_t end_time = SDL_GetPerformanceCounter();
         accumulated_render_ms += (double)((end_time - start_time) * 1000) / perf_freq;
 
@@ -301,20 +356,9 @@ int main(int argc, char* argv[]) {
             current_fps = frame_count;
             current_render_ms = accumulated_render_ms / frame_count;
             
-            spr_stats_t stats = spr_get_stats(ctx);
-            
             frame_count = 0;
             accumulated_render_ms = 0.0;
             last_time = SDL_GetTicks();
-            if (show_fps) {
-                char title[256];
-                snprintf(title, sizeof(title), "SPR STL Viewer [%s] [FPS: %d] [Render: %.2f ms] [Cull: %s] [Frags: %d] [Chunks: %d]", 
-                    get_shader_name(current_shader), current_fps, current_render_ms, cull_mode ? "ON" : "OFF",
-                    stats.peak_fragments, stats.total_chunks);
-                SDL_SetWindowTitle(window, title);
-            } else {
-                SDL_SetWindowTitle(window, "SPR STL Viewer");
-            }
         }
     }
     

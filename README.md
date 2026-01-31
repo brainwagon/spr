@@ -60,7 +60,7 @@ make test_spr
 *   **Shift + Left Mouse Drag**: Rotate light direction
 *   **Right Mouse Drag**: Pan
 *   **Mouse Wheel**: Zoom
-*   **'f' Key**: Toggle FPS and Render Time display
+*   **'s' Key**: Toggle Statistics Overlay (FPS, Frags, etc.)
 *   **'o' Key**: Toggle Transparency (Opaque / Translucent)
 *   **'c' Key**: Toggle Base Color (Grey / Red)
 *   **'b' Key**: Toggle Back-face Culling
