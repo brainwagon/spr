@@ -1,8 +1,9 @@
 #include <SDL2/SDL.h>
 #include "spr.h"
 #include "spr_shaders.h"
-#include "spr_texture.h" /* For texture loading */
-#include "stl.h"
+#include "spr_texture.h" 
+#include "spr_loader.h" /* Unified loader */
+#include "stl.h"        /* Still needed for legacy vertex struct definition in bounds calc */
 #include "font.h"
 #include <stdio.h>
 #include <math.h>
@@ -104,6 +105,7 @@ int main(int argc, char* argv[]) {
     const char* filename = NULL;
     const char* tex_filename = NULL;
     spr_rasterizer_mode_t mode = SPR_RASTERIZER_CPU; /* Default to CPU */
+    shader_type_t current_shader = SHADER_PLASTIC;
 
     /* Parse Args */
     for (int i = 1; i < argc; ++i) {
@@ -132,33 +134,45 @@ int main(int argc, char* argv[]) {
         printf("Mode: CPU\n");
     }
 
-    /* Load STL */
+    /* Load Mesh */
     printf("Loading %s...\n", filename);
-    stl_object_t* mesh = stl_load(filename);
+    spr_mesh_t* mesh = spr_load_mesh(filename);
     if (!mesh) {
         printf("Failed to load mesh.\n");
         return 1;
     }
     
-    /* Load Texture */
+    /* Load Texture Override */
     spr_texture_t* spr_tex = NULL;
+    
     if (tex_filename) {
         printf("Loading texture %s...\n", tex_filename);
         spr_tex = spr_texture_load(tex_filename);
         if (!spr_tex) printf("Failed to load texture.\n");
         else printf("Texture loaded: %dx%d (%d channels)\n", spr_tex->width, spr_tex->height, spr_tex->channels);
+    } else if (mesh->texture) {
+        spr_tex = mesh->texture;
+        current_shader = SHADER_PAINTED_PLASTIC; /* Auto-switch */
     }
     
     /* Calculate Bounds for auto-centering */
     float minx=1e9, miny=1e9, minz=1e9;
     float maxx=-1e9, maxy=-1e9, maxz=-1e9;
     for (int i=0; i<mesh->vertex_count; ++i) {
-        if (mesh->vertices[i].x < minx) minx = mesh->vertices[i].x;
-        if (mesh->vertices[i].x > maxx) maxx = mesh->vertices[i].x;
-        if (mesh->vertices[i].y < miny) miny = mesh->vertices[i].y;
-        if (mesh->vertices[i].y > maxy) maxy = mesh->vertices[i].y;
-        if (mesh->vertices[i].z < minz) minz = mesh->vertices[i].z;
-        if (mesh->vertices[i].z > maxz) maxz = mesh->vertices[i].z;
+        float vx, vy, vz;
+        if (mesh->type == SPR_MESH_STL) {
+            stl_vertex_t* v = &((stl_vertex_t*)mesh->vertices)[i];
+            vx = v->x; vy = v->y; vz = v->z;
+        } else {
+            spr_vertex_t* v = &((spr_vertex_t*)mesh->vertices)[i];
+            vx = v->position.x; vy = v->position.y; vz = v->position.z;
+        }
+        if (vx < minx) minx = vx;
+        if (vx > maxx) maxx = vx;
+        if (vy < miny) miny = vy;
+        if (vy > maxy) maxy = vy;
+        if (vz < minz) minz = vz;
+        if (vz > maxz) maxz = vz;
     }
     float cx = (minx+maxx)*0.5f;
     float cy = (miny+maxy)*0.5f;
@@ -199,8 +213,6 @@ int main(int argc, char* argv[]) {
     view.pan_y = 0.0f;
     view.light_rot_x = 45.0f;
     view.light_rot_y = 30.0f;
-    
-    shader_type_t current_shader = SHADER_PLASTIC;
     
     /* Stats State */
     int show_stats = 0;
@@ -322,33 +334,44 @@ int main(int argc, char* argv[]) {
         
         u.roughness = 32.0f;
 
+        spr_vertex_shader_t vs = NULL;
+        spr_fragment_shader_t fs = NULL;
+
         switch (current_shader) {
             case SHADER_CONSTANT:
-                spr_set_program(ctx, spr_shader_constant_vs, spr_shader_constant_fs, &u);
+                fs = spr_shader_constant_fs; vs = spr_shader_constant_vs;
                 break;
             case SHADER_MATTE:
-                spr_set_program(ctx, spr_shader_matte_vs, spr_shader_matte_fs, &u);
+                fs = spr_shader_matte_fs; vs = spr_shader_matte_vs;
                 break;
             case SHADER_PLASTIC:
-                spr_set_program(ctx, spr_shader_plastic_vs, spr_shader_plastic_fs, &u);
+                fs = spr_shader_plastic_fs; vs = spr_shader_plastic_vs;
                 break;
             case SHADER_METAL:
                 if (color_mode == 0) {
                     spr_uniforms_set_color(&u, 0.95f, 0.85f, 0.5f, 1.0f); /* Gold override */
                 }
                 u.roughness = 64.0f;
-                spr_set_program(ctx, spr_shader_metal_vs, spr_shader_metal_fs, &u);
+                fs = spr_shader_metal_fs; vs = spr_shader_metal_vs;
                 break;
             case SHADER_PAINTED_PLASTIC:
-                spr_set_program(ctx, spr_shader_paintedplastic_vs, spr_shader_paintedplastic_fs, &u);
+                fs = spr_shader_paintedplastic_fs; vs = spr_shader_paintedplastic_vs;
                 break;
         }
+        
+        /* If OBJ, override VS to standard textured VS to handle attributes correctly */
+        if (mesh->type == SPR_MESH_OBJ) {
+            vs = spr_shader_textured_vs;
+        }
+        
+        spr_set_program(ctx, vs, fs, &u);
         
         /* Culling */
         spr_enable_cull_face(ctx, cull_mode);
 
         /* Draw */
-        spr_draw_triangles(ctx, mesh->vertex_count / 3, mesh->vertices, sizeof(stl_vertex_t));
+        size_t stride = (mesh->type == SPR_MESH_STL) ? sizeof(stl_vertex_t) : sizeof(spr_vertex_t);
+        spr_draw_triangles(ctx, mesh->vertex_count / 3, mesh->vertices, stride);
         
         /* Resolve A-Buffer */
         spr_resolve(ctx);
@@ -405,8 +428,11 @@ int main(int argc, char* argv[]) {
     }
     
     spr_shutdown(ctx);
-    stl_free(mesh);
-    if (spr_tex) spr_texture_free(spr_tex);
+    if (tex_filename && spr_tex) {
+        spr_texture_free(spr_tex); /* Free manual override */
+    }
+    spr_free_mesh(mesh); /* Frees mesh and its internal texture */
+    
     SDL_DestroyTexture(texture);
     SDL_DestroyRenderer(renderer);
     SDL_DestroyWindow(window);

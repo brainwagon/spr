@@ -23,15 +23,19 @@ stl.o: stl.c stl.h
 spr_texture.o: spr_texture.c spr_texture.h spr.h stb_image.h
 	$(CC) $(CFLAGS) -c spr_texture.c -o spr_texture.o
 
+# Loader
+spr_loader.o: spr_loader.c spr_loader.h stl.h spr.h spr_texture.h
+	$(CC) $(CFLAGS) -c spr_loader.c -o spr_loader.o
+
 # Shaders
 spr_shaders.o: spr_shaders.c spr_shaders.h spr.h stl.h spr_texture.h
 	$(CC) $(CFLAGS) -c spr_shaders.c -o spr_shaders.o
 
 # Viewer
-viewer: viewer.o stl.o spr_shaders.o spr_texture.o libspr.a
-	$(CC) $(CFLAGS) $(SDL_CFLAGS) -o $@ viewer.o stl.o spr_shaders.o spr_texture.o $(LDFLAGS) -lspr $(SDL_LIBS) $(LIBS)
+viewer: viewer.o stl.o spr_shaders.o spr_texture.o spr_loader.o libspr.a
+	$(CC) $(CFLAGS) $(SDL_CFLAGS) -o $@ viewer.o stl.o spr_shaders.o spr_texture.o spr_loader.o $(LDFLAGS) -lspr $(SDL_LIBS) $(LIBS)
 
-viewer.o: viewer.c spr.h stl.h spr_shaders.h
+viewer.o: viewer.c spr.h stl.h spr_shaders.h spr_loader.h
 	$(CC) $(CFLAGS) $(SDL_CFLAGS) -c viewer.c -o viewer.o
 
 # Standalone Test
