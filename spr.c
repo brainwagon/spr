@@ -374,11 +374,11 @@ static void spr_rasterize_triangle_cpu(spr_context_t* ctx, const spr_vertex_out_
                 float w_recip = alpha * inv_w0 + beta * inv_w1 + gamma * inv_w2;
                 float w_final = 1.0f / w_recip;
                 
-                float z = (v0->position.z * inv_w0 * alpha + v1->position.z * inv_w1 * beta + v2->position.z * inv_w2 * gamma) * w_final;
+                float z = alpha * v0->position.z + beta * v1->position.z + gamma * v2->position.z;
                 
                 /* No Depth Test here - Just A-Buffer Insertion */
                 /* Assuming Near/Far clipping happens in vertex stage (partially) */
-                if (z >= 0.0f && z <= 1.0f) {
+                if (z >= -1.0f && z <= 1.0f) {
                     spr_vertex_out_t interp;
                     interp.position.x = (float)x + 0.5f;
                     interp.position.y = (float)y + 0.5f;
@@ -519,9 +519,9 @@ static void spr_rasterize_triangle_simd(spr_context_t* ctx, const spr_vertex_out
                         float w_recip = alpha * inv_w0 + beta * inv_w1 + gamma * inv_w2;
                         float w_final = 1.0f / w_recip;
                         
-                        float z = (v0->position.z * inv_w0 * alpha + v1->position.z * inv_w1 * beta + v2->position.z * inv_w2 * gamma) * w_final;
+                        float z = alpha * v0->position.z + beta * v1->position.z + gamma * v2->position.z;
                         
-                        if (z >= 0.0f && z <= 1.0f) {
+                        if (z >= -1.0f && z <= 1.0f) {
                             spr_vertex_out_t interp;
                             interp.position.x = (float)px + 0.5f;
                             interp.position.y = (float)y + 0.5f;
@@ -575,9 +575,9 @@ static void spr_rasterize_triangle_simd(spr_context_t* ctx, const spr_vertex_out
                 float w_recip = alpha * inv_w0 + beta * inv_w1 + gamma * inv_w2;
                 float w_final = 1.0f / w_recip;
                 
-                float z = (v0->position.z * inv_w0 * alpha + v1->position.z * inv_w1 * beta + v2->position.z * inv_w2 * gamma) * w_final;
+                float z = alpha * v0->position.z + beta * v1->position.z + gamma * v2->position.z;
                 
-                if (z >= 0.0f && z <= 1.0f) {
+                if (z >= -1.0f && z <= 1.0f) {
                     spr_vertex_out_t interp;
                     interp.position.x = (float)x + 0.5f;
                     interp.position.y = (float)y + 0.5f;
@@ -938,48 +938,37 @@ int spr_get_height(spr_context_t* ctx) {
     return ctx ? ctx->fb.height : 0;
 }
 
-void spr_draw_triangle_simple(spr_context_t* ctx, vec3_t v0, vec3_t v1, vec3_t v2, uint32_t color) {
-    /* Legacy fallback using old drawer if needed, but we removed it? */
-    /* Let's redirect to generic drawer with a basic shader if really needed, or just stub it out. */
-    /* For now, keeping it stubbed or updating it to use A-buffer manually would be tedious. */
-    /* I'll leave it as is, but it calls spr_draw_triangle_2d_flat which writes DIRECTLY to buffer. */
-    /* This will bypass A-buffer. That's fine for debug/test. */
+static void spr_vertex_interp(spr_vertex_out_t* out, const spr_vertex_out_t* v0, const spr_vertex_out_t* v1, float t) {
+    out->position.x = v0->position.x + (v1->position.x - v0->position.x) * t;
+    out->position.y = v0->position.y + (v1->position.y - v0->position.y) * t;
+    out->position.z = v0->position.z + (v1->position.z - v0->position.z) * t;
+    out->position.w = v0->position.w + (v1->position.w - v0->position.w) * t;
     
-    mat4_t mv = ctx->modelview_stack[ctx->modelview_ptr];
-    mat4_t p = ctx->projection_stack[ctx->projection_ptr];
-    mat4_t mvp = spr_mat4_mul(p, mv);
+    out->normal.x = v0->normal.x + (v1->normal.x - v0->normal.x) * t;
+    out->normal.y = v0->normal.y + (v1->normal.y - v0->normal.y) * t;
+    out->normal.z = v0->normal.z + (v1->normal.z - v0->normal.z) * t;
     
-    vec4_t p0, p1, p2;
-    float w, h;
-    vec2_t s0, s1, s2;
+    out->uv.x = v0->uv.x + (v1->uv.x - v0->uv.x) * t;
+    out->uv.y = v0->uv.y + (v1->uv.y - v0->uv.y) * t;
+    
+    out->color.x = v0->color.x + (v1->color.x - v0->color.x) * t;
+    out->color.y = v0->color.y + (v1->color.y - v0->color.y) * t;
+    out->color.z = v0->color.z + (v1->color.z - v0->color.z) * t;
+    out->color.w = v0->color.w + (v1->color.w - v0->color.w) * t;
+}
 
-    p0.x = v0.x; p0.y = v0.y; p0.z = v0.z; p0.w = 1.0f;
-    p1.x = v1.x; p1.y = v1.y; p1.z = v1.z; p1.w = 1.0f;
-    p2.x = v2.x; p2.y = v2.y; p2.z = v2.z; p2.w = 1.0f;
+static void spr_viewport_transform(spr_context_t* ctx, spr_vertex_out_t* v) {
+    float inv_w = 1.0f / v->position.w;
+    v->position.x *= inv_w;
+    v->position.y *= inv_w;
+    v->position.z *= inv_w;
     
-    p0 = spr_mat4_mul_vec4(mvp, p0);
-    p1 = spr_mat4_mul_vec4(mvp, p1);
-    p2 = spr_mat4_mul_vec4(mvp, p2);
+    float w = (float)ctx->fb.width;
+    float h = (float)ctx->fb.height;
     
-    if (p0.w <= 0.001f || p1.w <= 0.001f || p2.w <= 0.001f) return;
-
-    p0.x /= p0.w; p0.y /= p0.w; p0.z /= p0.w;
-    p1.x /= p1.w; p1.y /= p1.w; p1.z /= p1.w;
-    p2.x /= p2.w; p2.y /= p2.w; p2.z /= p2.w;
-
-    w = (float)ctx->fb.width;
-    h = (float)ctx->fb.height;
-    
-    s0.x = (p0.x + 1.0f) * 0.5f * w;
-    s0.y = (1.0f - p0.y) * 0.5f * h;
-    
-    s1.x = (p1.x + 1.0f) * 0.5f * w;
-    s1.y = (1.0f - p1.y) * 0.5f * h;
-    
-    s2.x = (p2.x + 1.0f) * 0.5f * w;
-    s2.y = (1.0f - p2.y) * 0.5f * h;
-
-    spr_draw_triangle_2d_flat(ctx, s0, s1, s2, color);
+    v->position.x = (v->position.x + 1.0f) * 0.5f * w;
+    v->position.y = (1.0f - v->position.y) * 0.5f * h;
+    v->position.w = inv_w; /* Store 1/w for interpolation */
 }
 
 void spr_draw_triangles(spr_context_t* ctx, int count, const void* vertices, size_t stride) {
@@ -991,34 +980,49 @@ void spr_draw_triangles(spr_context_t* ctx, int count, const void* vertices, siz
     const uint8_t* v_ptr = (const uint8_t*)vertices;
     
     for (i = 0; i < count; ++i) {
-        spr_vertex_out_t v0, v1, v2;
+        spr_vertex_out_t tri[3];
         
-        ctx->current_vs(ctx->current_uniforms, v_ptr, &v0); v_ptr += stride;
-        ctx->current_vs(ctx->current_uniforms, v_ptr, &v1); v_ptr += stride;
-        ctx->current_vs(ctx->current_uniforms, v_ptr, &v2); v_ptr += stride;
+        ctx->current_vs(ctx->current_uniforms, v_ptr, &tri[0]); v_ptr += stride;
+        ctx->current_vs(ctx->current_uniforms, v_ptr, &tri[1]); v_ptr += stride;
+        ctx->current_vs(ctx->current_uniforms, v_ptr, &tri[2]); v_ptr += stride;
         
-        if (v0.position.w <= 0.001f || v1.position.w <= 0.001f || v2.position.w <= 0.001f) continue; 
+        /* Sutherland-Hodgman clipping against near plane (w >= epsilon) */
+        spr_vertex_out_t clipped[4];
+        int clipped_count = 0;
+        const float epsilon = 0.001f;
         
-        float inv_w0 = 1.0f / v0.position.w;
-        float inv_w1 = 1.0f / v1.position.w;
-        float inv_w2 = 1.0f / v2.position.w;
+        for (int j = 0; j < 3; ++j) {
+            spr_vertex_out_t* v1 = &tri[j];
+            spr_vertex_out_t* v2 = &tri[(j + 1) % 3];
+            
+            int v1_inside = v1->position.w >= epsilon;
+            int v2_inside = v2->position.w >= epsilon;
+            
+            if (v1_inside) {
+                if (v2_inside) {
+                    clipped[clipped_count++] = *v2;
+                } else {
+                    float t = (epsilon - v1->position.w) / (v2->position.w - v1->position.w);
+                    spr_vertex_interp(&clipped[clipped_count++], v1, v2, t);
+                }
+            } else if (v2_inside) {
+                float t = (epsilon - v1->position.w) / (v2->position.w - v1->position.w);
+                spr_vertex_interp(&clipped[clipped_count++], v1, v2, t);
+                clipped[clipped_count++] = *v2;
+            }
+        }
         
-        v0.position.x *= inv_w0; v0.position.y *= inv_w0; v0.position.z *= inv_w0;
-        v1.position.x *= inv_w1; v1.position.y *= inv_w1; v1.position.z *= inv_w1;
-        v2.position.x *= inv_w2; v2.position.y *= inv_w2; v2.position.z *= inv_w2;
+        if (clipped_count < 3) continue;
         
-        float w = (float)ctx->fb.width;
-        float h = (float)ctx->fb.height;
+        /* Transform and Draw */
+        for (int j = 0; j < clipped_count; ++j) {
+            spr_viewport_transform(ctx, &clipped[j]);
+        }
         
-        v0.position.x = (v0.position.x + 1.0f) * 0.5f * w; v0.position.y = (1.0f - v0.position.y) * 0.5f * h;
-        v1.position.x = (v1.position.x + 1.0f) * 0.5f * w; v1.position.y = (1.0f - v1.position.y) * 0.5f * h;
-        v2.position.x = (v2.position.x + 1.0f) * 0.5f * w; v2.position.y = (1.0f - v2.position.y) * 0.5f * h;
-        
-        v0.position.w = inv_w0;
-        v1.position.w = inv_w1;
-        v2.position.w = inv_w2;
-        
-        ctx->rasterizer_func(ctx, &v0, &v1, &v2);
+        ctx->rasterizer_func(ctx, &clipped[0], &clipped[1], &clipped[2]);
+        if (clipped_count == 4) {
+            ctx->rasterizer_func(ctx, &clipped[0], &clipped[2], &clipped[3]);
+        }
     }
 }
 
