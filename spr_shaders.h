@@ -12,7 +12,8 @@ typedef struct {
     vec4_t color;       /* Base Color (RGBA) - Alpha often ignored if Opacity used */
     vec3_t opacity;     /* Per-channel Opacity (Transmission) */
     float roughness;    /* Specular power (shininess) */
-    void* texture_ptr;  /* Optional pointer to spr_texture_t */
+    void* texture_ptr;  /* Optional pointer to spr_texture_t (Diffuse) */
+    void* specular_map_ptr; /* Optional pointer to spr_texture_t (Specular) */
 } spr_shader_uniforms_t;
 
 /* --- Constant (Unlit) --- */

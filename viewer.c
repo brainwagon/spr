@@ -346,44 +346,75 @@ int main(int argc, char* argv[]) {
         
         u.roughness = 32.0f;
 
-        spr_vertex_shader_t vs = NULL;
-        spr_fragment_shader_t fs = NULL;
-
-        switch (current_shader) {
-            case SHADER_CONSTANT:
-                fs = spr_shader_constant_fs; vs = spr_shader_constant_vs;
-                break;
-            case SHADER_MATTE:
-                fs = spr_shader_matte_fs; vs = spr_shader_matte_vs;
-                break;
-            case SHADER_PLASTIC:
-                fs = spr_shader_plastic_fs; vs = spr_shader_plastic_vs;
-                break;
-            case SHADER_METAL:
-                if (color_mode == 0) {
-                    spr_uniforms_set_color(&u, 0.95f, 0.85f, 0.5f, 1.0f); /* Gold override */
-                }
-                u.roughness = 64.0f;
-                fs = spr_shader_metal_fs; vs = spr_shader_metal_vs;
-                break;
-            case SHADER_PAINTED_PLASTIC:
-                fs = spr_shader_paintedplastic_fs; vs = spr_shader_paintedplastic_vs;
-                break;
-        }
-        
-        /* If OBJ, override VS to standard textured VS to handle attributes correctly */
-        if (mesh->type == SPR_MESH_OBJ) {
-            vs = spr_shader_textured_vs;
-        }
-        
-        spr_set_program(ctx, vs, fs, &u);
-        
         /* Culling */
         spr_enable_cull_face(ctx, cull_mode);
 
-        /* Draw */
         size_t stride = (mesh->type == SPR_MESH_STL) ? sizeof(stl_vertex_t) : sizeof(spr_vertex_t);
-        spr_draw_triangles(ctx, mesh->vertex_count / 3, mesh->vertices, stride);
+        
+        /* Render Groups */
+        for (int g = 0; g < mesh->group_count; ++g) {
+            spr_mesh_group_t* group = &mesh->groups[g];
+            
+            /* Apply Material or Global Defaults */
+            if (tex_filename && spr_tex) {
+                /* Global override */
+                u.texture_ptr = spr_tex;
+                u.specular_map_ptr = NULL;
+            } else if (group->material) {
+                spr_uniforms_set_color(&u, group->material->Kd.x, group->material->Kd.y, group->material->Kd.z, group->material->d);
+                u.roughness = group->material->Ns;
+                u.texture_ptr = group->material->map_Kd;
+                u.specular_map_ptr = group->material->map_Ks;
+            } else {
+                /* Reset to global defaults if no material */
+                u.texture_ptr = NULL;
+                u.specular_map_ptr = NULL;
+                /* Note: u.color was set by color_mode block earlier */
+            }
+            
+            /* Shader Selection */
+            spr_vertex_shader_t vs = NULL;
+            spr_fragment_shader_t fs = NULL;
+            
+            shader_type_t shader = current_shader;
+            /* Auto-switch to Painted if texture available and using default Plastic */
+            if (u.texture_ptr && shader == SHADER_PLASTIC) {
+                shader = SHADER_PAINTED_PLASTIC;
+            }
+
+            switch (shader) {
+                case SHADER_CONSTANT:
+                    fs = spr_shader_constant_fs; vs = spr_shader_constant_vs;
+                    break;
+                case SHADER_MATTE:
+                    fs = spr_shader_matte_fs; vs = spr_shader_matte_vs;
+                    break;
+                case SHADER_PLASTIC:
+                    fs = spr_shader_plastic_fs; vs = spr_shader_plastic_vs;
+                    break;
+                case SHADER_METAL:
+                    if (color_mode == 0 && !group->material) { 
+                        spr_uniforms_set_color(&u, 0.95f, 0.85f, 0.5f, 1.0f); /* Gold override */
+                    }
+                    u.roughness = 64.0f;
+                    fs = spr_shader_metal_fs; vs = spr_shader_metal_vs;
+                    break;
+                case SHADER_PAINTED_PLASTIC:
+                    fs = spr_shader_paintedplastic_fs; vs = spr_shader_paintedplastic_vs;
+                    break;
+            }
+            
+            /* If OBJ, override VS to standard textured VS */
+            if (mesh->type == SPR_MESH_OBJ) {
+                vs = spr_shader_textured_vs;
+            }
+            
+            spr_set_program(ctx, vs, fs, &u);
+            
+            /* Draw Group */
+            void* start_ptr = (uint8_t*)mesh->vertices + (group->start_vertex * stride);
+            spr_draw_triangles(ctx, group->vertex_count / 3, start_ptr, stride);
+        }
         
         /* Resolve A-Buffer */
         spr_resolve(ctx);

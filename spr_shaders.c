@@ -217,6 +217,12 @@ spr_fs_output_t spr_shader_paintedplastic_fs(void* user_data, const spr_vertex_o
         if (s > 0.0f) spec = powf(s, u->roughness);
     }
     
+    /* Specular Map Modulation */
+    if (u->specular_map_ptr) {
+        vec4_t spec_map = spr_texture_sample((const spr_texture_t*)u->specular_map_ptr, interpolated->uv.x, interpolated->uv.y);
+        spec *= spec_map.x; /* Use Red channel for intensity */
+    }
+    
     /* Mix Texture with Vertex Color (Multiply) */
     float base_r = tex_col.x * u->color.x * interpolated->color.x;
     float base_g = tex_col.y * u->color.y * interpolated->color.y;
