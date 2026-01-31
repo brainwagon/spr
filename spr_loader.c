@@ -106,23 +106,23 @@ static void parse_mtl(const char* mtl_path, dyn_array_t* materials) {
             
         } else if (!current_mat) {
             continue;
-        } else if (strncmp(ptr, "Ka ", 3) == 0) {
-            sscanf(ptr+3, "%f %f %f", &current_mat->Ka.x, &current_mat->Ka.y, &current_mat->Ka.z);
-        } else if (strncmp(ptr, "Kd ", 3) == 0) {
-            sscanf(ptr+3, "%f %f %f", &current_mat->Kd.x, &current_mat->Kd.y, &current_mat->Kd.z);
-        } else if (strncmp(ptr, "Ks ", 3) == 0) {
-            sscanf(ptr+3, "%f %f %f", &current_mat->Ks.x, &current_mat->Ks.y, &current_mat->Ks.z);
-        } else if (strncmp(ptr, "Ns ", 3) == 0) {
-            sscanf(ptr+3, "%f", &current_mat->Ns);
-        } else if (strncmp(ptr, "d ", 2) == 0) {
-            sscanf(ptr+2, "%f", &current_mat->d);
-        } else if (strncmp(ptr, "map_Kd ", 7) == 0) {
-            ptr += 7; while (*ptr == ' ' || *ptr == '\t') ptr++;
+        } else if (strncmp(ptr, "Ka", 2) == 0 && isspace(ptr[2])) {
+            sscanf(ptr+2, "%f %f %f", &current_mat->Ka.x, &current_mat->Ka.y, &current_mat->Ka.z);
+        } else if (strncmp(ptr, "Kd", 2) == 0 && isspace(ptr[2])) {
+            sscanf(ptr+2, "%f %f %f", &current_mat->Kd.x, &current_mat->Kd.y, &current_mat->Kd.z);
+        } else if (strncmp(ptr, "Ks", 2) == 0 && isspace(ptr[2])) {
+            sscanf(ptr+2, "%f %f %f", &current_mat->Ks.x, &current_mat->Ks.y, &current_mat->Ks.z);
+        } else if (strncmp(ptr, "Ns", 2) == 0 && isspace(ptr[2])) {
+            sscanf(ptr+2, "%f", &current_mat->Ns);
+        } else if (strncmp(ptr, "d", 1) == 0 && isspace(ptr[1])) {
+            sscanf(ptr+1, "%f", &current_mat->d);
+        } else if (strncmp(ptr, "map_Kd", 6) == 0 && isspace(ptr[6])) {
+            ptr += 6; while (*ptr == ' ' || *ptr == '\t') ptr++;
             char* path = concat_path(dir, ptr);
             current_mat->map_Kd = spr_texture_load(path);
             free(path);
-        } else if (strncmp(ptr, "map_Ks ", 7) == 0) {
-            ptr += 7; while (*ptr == ' ' || *ptr == '\t') ptr++;
+        } else if (strncmp(ptr, "map_Ks", 6) == 0 && isspace(ptr[6])) {
+            ptr += 6; while (*ptr == ' ' || *ptr == '\t') ptr++;
             char* path = concat_path(dir, ptr);
             current_mat->map_Ks = spr_texture_load(path);
             free(path);
