@@ -29,6 +29,7 @@ spr_texture_t* spr_texture_load(const char* filename) {
     tex->height = h;
     tex->channels = n;
     tex->pixels = data;
+    tex->sample_count = 0;
     
     return tex;
 }
@@ -43,6 +44,7 @@ void spr_texture_free(spr_texture_t* tex) {
 vec4_t spr_texture_sample(const spr_texture_t* tex, float u, float v, spr_stats_t* stats) {
     vec4_t c = {1.0f, 1.0f, 1.0f, 1.0f};
     if (stats) stats->texture_samples++;
+    if (tex) ((spr_texture_t*)tex)->sample_count++;
     
     if (!tex || !tex->pixels) return c;
     

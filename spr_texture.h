@@ -11,6 +11,7 @@ typedef struct {
     int height;
     int channels;    /* 1 (Gray), 3 (RGB), 4 (RGBA) */
     uint8_t* pixels; /* Raw data */
+    uint64_t sample_count; /* Statistics: Total samples */
 } spr_texture_t;
 
 /* Returns NULL if failed or if texturing is disabled */

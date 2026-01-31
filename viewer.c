@@ -301,6 +301,15 @@ int main(int argc, char* argv[]) {
         uint32_t clear_col = spr_make_color(30, 30, 30, 255);
         spr_clear(ctx, clear_col, 1.0f);
         
+        /* Reset Texture Stats */
+        if (tex_filename && spr_tex) spr_tex->sample_count = 0;
+        if (mesh->materials) {
+            for (int i=0; i<mesh->material_count; ++i) {
+                if (mesh->materials[i].map_Kd) mesh->materials[i].map_Kd->sample_count = 0;
+                if (mesh->materials[i].map_Ks) mesh->materials[i].map_Ks->sample_count = 0;
+            }
+        }
+        
         spr_matrix_mode(ctx, SPR_PROJECTION);
         spr_load_identity(ctx);
         spr_perspective(ctx, 45.0f, (float)win_width/(float)win_height, size*0.01f, size*10.0f);
@@ -426,28 +435,48 @@ int main(int argc, char* argv[]) {
             char stats_buf[64];
             spr_stats_t stats = spr_get_stats(ctx);
             uint32_t col = 0xFFFFFFFF;
+            int y = 10;
             
             snprintf(stats_buf, sizeof(stats_buf), "FPS: %d", current_fps);
-            draw_string_overlay(spr_get_color_buffer(ctx), win_width, win_height, 10, 10, stats_buf, col);
+            draw_string_overlay(spr_get_color_buffer(ctx), win_width, win_height, 10, y, stats_buf, col); y += 12;
 
             snprintf(stats_buf, sizeof(stats_buf), "Time: %.2f ms", current_render_ms);
-            draw_string_overlay(spr_get_color_buffer(ctx), win_width, win_height, 10, 22, stats_buf, col);
+            draw_string_overlay(spr_get_color_buffer(ctx), win_width, win_height, 10, y, stats_buf, col); y += 12;
             
             snprintf(stats_buf, sizeof(stats_buf), "Frags: %d", stats.peak_fragments);
-            draw_string_overlay(spr_get_color_buffer(ctx), win_width, win_height, 10, 34, stats_buf, col);
+            draw_string_overlay(spr_get_color_buffer(ctx), win_width, win_height, 10, y, stats_buf, col); y += 12;
 
             snprintf(stats_buf, sizeof(stats_buf), "Chunks: %d", stats.total_chunks);
-            draw_string_overlay(spr_get_color_buffer(ctx), win_width, win_height, 10, 46, stats_buf, col);
+            draw_string_overlay(spr_get_color_buffer(ctx), win_width, win_height, 10, y, stats_buf, col); y += 12;
 
             snprintf(stats_buf, sizeof(stats_buf), "Tex Samples: %llu", (unsigned long long)stats.texture_samples);
-            draw_string_overlay(spr_get_color_buffer(ctx), win_width, win_height, 10, 58, stats_buf, col);
+            draw_string_overlay(spr_get_color_buffer(ctx), win_width, win_height, 10, y, stats_buf, col); y += 12;
 
             snprintf(stats_buf, sizeof(stats_buf), "Shader: %s", get_shader_name(current_shader));
-            draw_string_overlay(spr_get_color_buffer(ctx), win_width, win_height, 10, 70, stats_buf, col);
+            draw_string_overlay(spr_get_color_buffer(ctx), win_width, win_height, 10, y, stats_buf, col); y += 12;
             
             snprintf(stats_buf, sizeof(stats_buf), "Cull: %s", cull_mode ? "ON" : "OFF");
-            draw_string_overlay(spr_get_color_buffer(ctx), win_width, win_height, 10, 82, stats_buf, col);
+            draw_string_overlay(spr_get_color_buffer(ctx), win_width, win_height, 10, y, stats_buf, col); y += 12;
+            
+            /* Per-Texture Stats */
+            if (tex_filename && spr_tex) {
+                snprintf(stats_buf, sizeof(stats_buf), "Override: %llu", (unsigned long long)spr_tex->sample_count);
+                draw_string_overlay(spr_get_color_buffer(ctx), win_width, win_height, 10, y, stats_buf, col); y += 12;
+            }
+            if (mesh->materials) {
+                for (int i=0; i<mesh->material_count; ++i) {
+                    if (mesh->materials[i].map_Kd && mesh->materials[i].map_Kd->sample_count > 0) {
+                        snprintf(stats_buf, sizeof(stats_buf), "%.10s(D): %llu", mesh->materials[i].name, (unsigned long long)mesh->materials[i].map_Kd->sample_count);
+                        draw_string_overlay(spr_get_color_buffer(ctx), win_width, win_height, 10, y, stats_buf, col); y += 12;
+                    }
+                    if (mesh->materials[i].map_Ks && mesh->materials[i].map_Ks->sample_count > 0) {
+                        snprintf(stats_buf, sizeof(stats_buf), "%.10s(S): %llu", mesh->materials[i].name, (unsigned long long)mesh->materials[i].map_Ks->sample_count);
+                        draw_string_overlay(spr_get_color_buffer(ctx), win_width, win_height, 10, y, stats_buf, col); y += 12;
+                    }
+                }
+            }
         }
+
         
         uint64_t end_time = SDL_GetPerformanceCounter();
         accumulated_render_ms += (double)((end_time - start_time) * 1000) / perf_freq;
