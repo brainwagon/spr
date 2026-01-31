@@ -10,8 +10,6 @@
 #include <string.h>
 
 /* --- Window Settings --- */
-#define WINDOW_WIDTH 800
-#define WINDOW_HEIGHT 600
 
 /* --- Text Rendering --- */
 void draw_char_overlay(uint32_t* buffer, int width, int height, int x, int y, char c, uint32_t color) {
@@ -97,6 +95,9 @@ void print_help(const char* prog_name) {
 }
 
 int main(int argc, char* argv[]) {
+    int win_width = 800;
+    int win_height = 600;
+
     if (argc < 2) {
         print_help(argv[0]);
         return 1;
@@ -193,15 +194,15 @@ int main(int argc, char* argv[]) {
     
     SDL_Window* window = SDL_CreateWindow("SPR Object Viewer", 
         SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, 
-        WINDOW_WIDTH, WINDOW_HEIGHT, SDL_WINDOW_SHOWN);
+        win_width, win_height, SDL_WINDOW_SHOWN | SDL_WINDOW_RESIZABLE);
         
     SDL_Renderer* renderer = SDL_CreateRenderer(window, -1, 0);
     SDL_Texture* texture = SDL_CreateTexture(renderer, 
         SDL_PIXELFORMAT_ABGR8888, SDL_TEXTUREACCESS_STREAMING, 
-        WINDOW_WIDTH, WINDOW_HEIGHT);
+        win_width, win_height);
 
     /* Init SPR */
-    spr_context_t* ctx = spr_init(WINDOW_WIDTH, WINDOW_HEIGHT);
+    spr_context_t* ctx = spr_init(win_width, win_height);
     spr_set_rasterizer_mode(ctx, mode);
     
     /* View State */
@@ -232,6 +233,17 @@ int main(int argc, char* argv[]) {
         SDL_Event e;
         while (SDL_PollEvent(&e)) {
             if (e.type == SDL_QUIT) running = 0;
+            else if (e.type == SDL_WINDOWEVENT && e.window.event == SDL_WINDOWEVENT_RESIZED) {
+                win_width = e.window.data1;
+                win_height = e.window.data2;
+                
+                spr_shutdown(ctx);
+                ctx = spr_init(win_width, win_height);
+                spr_set_rasterizer_mode(ctx, mode);
+                
+                SDL_DestroyTexture(texture);
+                texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ABGR8888, SDL_TEXTUREACCESS_STREAMING, win_width, win_height);
+            }
             else if (e.type == SDL_KEYDOWN) {
                 switch (e.key.keysym.sym) {
                     case SDLK_ESCAPE: running = 0; break;
@@ -290,7 +302,7 @@ int main(int argc, char* argv[]) {
         
         spr_matrix_mode(ctx, SPR_PROJECTION);
         spr_load_identity(ctx);
-        spr_perspective(ctx, 45.0f, (float)WINDOW_WIDTH/(float)WINDOW_HEIGHT, size*0.01f, size*10.0f);
+        spr_perspective(ctx, 45.0f, (float)win_width/(float)win_height, size*0.01f, size*10.0f);
         
         spr_matrix_mode(ctx, SPR_MODELVIEW);
         spr_load_identity(ctx);
@@ -383,22 +395,22 @@ int main(int argc, char* argv[]) {
             uint32_t col = 0xFFFFFFFF;
             
             snprintf(stats_buf, sizeof(stats_buf), "FPS: %d", current_fps);
-            draw_string_overlay(spr_get_color_buffer(ctx), WINDOW_WIDTH, WINDOW_HEIGHT, 10, 10, stats_buf, col);
+            draw_string_overlay(spr_get_color_buffer(ctx), win_width, win_height, 10, 10, stats_buf, col);
 
             snprintf(stats_buf, sizeof(stats_buf), "Time: %.2f ms", current_render_ms);
-            draw_string_overlay(spr_get_color_buffer(ctx), WINDOW_WIDTH, WINDOW_HEIGHT, 10, 22, stats_buf, col);
+            draw_string_overlay(spr_get_color_buffer(ctx), win_width, win_height, 10, 22, stats_buf, col);
             
             snprintf(stats_buf, sizeof(stats_buf), "Frags: %d", stats.peak_fragments);
-            draw_string_overlay(spr_get_color_buffer(ctx), WINDOW_WIDTH, WINDOW_HEIGHT, 10, 34, stats_buf, col);
+            draw_string_overlay(spr_get_color_buffer(ctx), win_width, win_height, 10, 34, stats_buf, col);
 
             snprintf(stats_buf, sizeof(stats_buf), "Chunks: %d", stats.total_chunks);
-            draw_string_overlay(spr_get_color_buffer(ctx), WINDOW_WIDTH, WINDOW_HEIGHT, 10, 46, stats_buf, col);
+            draw_string_overlay(spr_get_color_buffer(ctx), win_width, win_height, 10, 46, stats_buf, col);
 
             snprintf(stats_buf, sizeof(stats_buf), "Shader: %s", get_shader_name(current_shader));
-            draw_string_overlay(spr_get_color_buffer(ctx), WINDOW_WIDTH, WINDOW_HEIGHT, 10, 58, stats_buf, col);
+            draw_string_overlay(spr_get_color_buffer(ctx), win_width, win_height, 10, 58, stats_buf, col);
             
             snprintf(stats_buf, sizeof(stats_buf), "Cull: %s", cull_mode ? "ON" : "OFF");
-            draw_string_overlay(spr_get_color_buffer(ctx), WINDOW_WIDTH, WINDOW_HEIGHT, 10, 70, stats_buf, col);
+            draw_string_overlay(spr_get_color_buffer(ctx), win_width, win_height, 10, 70, stats_buf, col);
         }
         
         uint64_t end_time = SDL_GetPerformanceCounter();
@@ -408,7 +420,7 @@ int main(int argc, char* argv[]) {
         void* pixels;
         int pitch;
         SDL_LockTexture(texture, NULL, &pixels, &pitch);
-        memcpy(pixels, spr_get_color_buffer(ctx), WINDOW_WIDTH * WINDOW_HEIGHT * 4);
+        memcpy(pixels, spr_get_color_buffer(ctx), win_width * win_height * 4);
         SDL_UnlockTexture(texture);
         
         SDL_RenderClear(renderer);
