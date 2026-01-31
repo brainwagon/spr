@@ -1,6 +1,7 @@
 #include <SDL2/SDL.h>
 #include "spr.h"
 #include "spr_shaders.h"
+#include "spr_texture.h" /* For texture loading */
 #include "stl.h"
 #include "font.h"
 #include <stdio.h>
@@ -60,7 +61,8 @@ typedef enum {
     SHADER_CONSTANT,
     SHADER_MATTE,
     SHADER_PLASTIC,
-    SHADER_METAL
+    SHADER_METAL,
+    SHADER_PAINTED_PLASTIC
 } shader_type_t;
 
 const char* get_shader_name(shader_type_t s) {
@@ -69,6 +71,7 @@ const char* get_shader_name(shader_type_t s) {
         case SHADER_MATTE: return "Matte";
         case SHADER_PLASTIC: return "Plastic";
         case SHADER_METAL: return "Metal";
+        case SHADER_PAINTED_PLASTIC: return "Painted";
         default: return "Unknown";
     }
 }
@@ -80,6 +83,7 @@ int main(int argc, char* argv[]) {
     }
 
     const char* filename = NULL;
+    const char* tex_filename = NULL;
     spr_rasterizer_mode_t mode = SPR_RASTERIZER_CPU; /* Default to CPU */
 
     /* Parse Args */
@@ -89,12 +93,13 @@ int main(int argc, char* argv[]) {
         } else if (strcmp(argv[i], "-cpu") == 0) {
             mode = SPR_RASTERIZER_CPU;
         } else if (argv[i][0] != '-') {
-            filename = argv[i];
+            if (!filename) filename = argv[i];
+            else if (!tex_filename) tex_filename = argv[i];
         }
     }
 
     if (!filename) {
-        printf("Error: No STL file specified.\n");
+        printf("Usage: %s <stl_file> [texture_file] [-simd | -cpu]\n", argv[0]);
         return 1;
     }
 
@@ -110,6 +115,15 @@ int main(int argc, char* argv[]) {
     if (!mesh) {
         printf("Failed to load mesh.\n");
         return 1;
+    }
+    
+    /* Load Texture */
+    spr_texture_t* spr_tex = NULL;
+    if (tex_filename) {
+        printf("Loading texture %s...\n", tex_filename);
+        spr_tex = spr_texture_load(tex_filename);
+        if (!spr_tex) printf("Failed to load texture.\n");
+        else printf("Texture loaded: %dx%d (%d channels)\n", spr_tex->width, spr_tex->height, spr_tex->channels);
     }
     
     /* Calculate Bounds for auto-centering */
@@ -194,6 +208,7 @@ int main(int argc, char* argv[]) {
                     case SDLK_2: current_shader = SHADER_MATTE; break;
                     case SDLK_3: current_shader = SHADER_PLASTIC; break;
                     case SDLK_4: current_shader = SHADER_METAL; break;
+                    case SDLK_5: current_shader = SHADER_PAINTED_PLASTIC; break;
                 }
             }
             else if (e.type == SDL_MOUSEBUTTONDOWN) {
@@ -268,6 +283,7 @@ int main(int argc, char* argv[]) {
         spr_uniforms_set_light_dir(&u, lx, ly, lz);
         
         u.eye_pos = eye; 
+        u.texture_ptr = spr_tex;
         
         if (color_mode == 0) {
             spr_uniforms_set_color(&u, 0.7f, 0.7f, 0.7f, 1.0f); /* Grey */
@@ -299,6 +315,9 @@ int main(int argc, char* argv[]) {
                 }
                 u.roughness = 64.0f;
                 spr_set_program(ctx, spr_shader_metal_vs, spr_shader_metal_fs, &u);
+                break;
+            case SHADER_PAINTED_PLASTIC:
+                spr_set_program(ctx, spr_shader_paintedplastic_vs, spr_shader_paintedplastic_fs, &u);
                 break;
         }
         
@@ -364,6 +383,7 @@ int main(int argc, char* argv[]) {
     
     spr_shutdown(ctx);
     stl_free(mesh);
+    if (spr_tex) spr_texture_free(spr_tex);
     SDL_DestroyTexture(texture);
     SDL_DestroyRenderer(renderer);
     SDL_DestroyWindow(window);

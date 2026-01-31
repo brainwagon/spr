@@ -1,5 +1,5 @@
 CC = gcc
-CFLAGS = -Wall -Wextra -O2 -I.
+CFLAGS = -Wall -Wextra -O2 -I. -DSPR_ENABLE_TEXTURES
 LDFLAGS = -L.
 LIBS = -lm
 SDL_CFLAGS := $(shell sdl2-config --cflags)
@@ -19,13 +19,17 @@ spr.o: spr.c spr.h
 stl.o: stl.c stl.h
 	$(CC) $(CFLAGS) -c stl.c -o stl.o
 
+# Textures
+spr_texture.o: spr_texture.c spr_texture.h spr.h stb_image.h
+	$(CC) $(CFLAGS) -c spr_texture.c -o spr_texture.o
+
 # Shaders
-spr_shaders.o: spr_shaders.c spr_shaders.h spr.h stl.h
+spr_shaders.o: spr_shaders.c spr_shaders.h spr.h stl.h spr_texture.h
 	$(CC) $(CFLAGS) -c spr_shaders.c -o spr_shaders.o
 
 # Viewer
-viewer: viewer.o stl.o spr_shaders.o libspr.a
-	$(CC) $(CFLAGS) $(SDL_CFLAGS) -o $@ viewer.o stl.o spr_shaders.o $(LDFLAGS) -lspr $(SDL_LIBS) $(LIBS)
+viewer: viewer.o stl.o spr_shaders.o spr_texture.o libspr.a
+	$(CC) $(CFLAGS) $(SDL_CFLAGS) -o $@ viewer.o stl.o spr_shaders.o spr_texture.o $(LDFLAGS) -lspr $(SDL_LIBS) $(LIBS)
 
 viewer.o: viewer.c spr.h stl.h spr_shaders.h
 	$(CC) $(CFLAGS) $(SDL_CFLAGS) -c viewer.c -o viewer.o

@@ -12,6 +12,7 @@ typedef struct {
     vec4_t color;       /* Base Color (RGBA) - Alpha often ignored if Opacity used */
     vec3_t opacity;     /* Per-channel Opacity (Transmission) */
     float roughness;    /* Specular power (shininess) */
+    void* texture_ptr;  /* Optional pointer to spr_texture_t */
 } spr_shader_uniforms_t;
 
 /* --- Constant (Unlit) --- */
@@ -25,6 +26,10 @@ spr_fs_output_t spr_shader_matte_fs(void* user_data, const spr_vertex_out_t* int
 /* --- Plastic (Diffuse + Specular) --- */
 void spr_shader_plastic_vs(void* user_data, const void* input_vertex, spr_vertex_out_t* out);
 spr_fs_output_t spr_shader_plastic_fs(void* user_data, const spr_vertex_out_t* interpolated);
+
+/* --- Painted Plastic (Textured) --- */
+void spr_shader_paintedplastic_vs(void* user_data, const void* input_vertex, spr_vertex_out_t* out);
+spr_fs_output_t spr_shader_paintedplastic_fs(void* user_data, const spr_vertex_out_t* interpolated);
 
 /* --- Metal (High Specular, Low Diffuse) --- */
 void spr_shader_metal_vs(void* user_data, const void* input_vertex, spr_vertex_out_t* out);

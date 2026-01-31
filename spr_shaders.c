@@ -1,3 +1,4 @@
+#include "spr_texture.h" /* For texture sampling */
 #include "spr_shaders.h"
 #include "stl.h" /* For stl_vertex_t */
 #include <math.h>
@@ -174,6 +175,56 @@ spr_fs_output_t spr_shader_plastic_fs(void* user_data, const spr_vertex_out_t* i
     float r = br * (diff + amb) + spec * 0.4f;
     float g = bg * (diff + amb) + spec * 0.4f;
     float b = bb * (diff + amb) + spec * 0.4f;
+    
+    out.color.x = r * u->opacity.x;
+    out.color.y = g * u->opacity.y;
+    out.color.z = b * u->opacity.z;
+    out.opacity = u->opacity;
+    
+    return out;
+}
+
+/* --- Painted Plastic Shader --- */
+void spr_shader_paintedplastic_vs(void* user_data, const void* input_vertex, spr_vertex_out_t* out) {
+    spr_shader_matte_vs(user_data, input_vertex, out);
+    
+    /* Generate UVs (Planar Z Projection for testing) */
+    /* Scale factor 0.05 to make texture repeat reasonably on typical STL units (mm) */
+    const stl_vertex_t* v = (const stl_vertex_t*)input_vertex;
+    out->uv.x = v->x * 0.05f;
+    out->uv.y = v->y * 0.05f;
+}
+
+spr_fs_output_t spr_shader_paintedplastic_fs(void* user_data, const spr_vertex_out_t* interpolated) {
+    spr_shader_uniforms_t* u = (spr_shader_uniforms_t*)user_data;
+    spr_fs_output_t out;
+    
+    /* Sample Texture */
+    vec4_t tex_col = spr_texture_sample((const spr_texture_t*)u->texture_ptr, interpolated->uv.x, interpolated->uv.y);
+    
+    /* Reuse Plastic Lighting Logic */
+    vec3_t N = sh_normalize(interpolated->normal);
+    vec3_t L = sh_normalize(u->light_dir);
+    
+    float diff = sh_max(sh_dot(N, L), 0.0f);
+    float amb = 0.2f;
+    float spec = 0.0f;
+    
+    if (diff > 0.0f) {
+        vec3_t V = {0.0f, 0.0f, 1.0f}; 
+        vec3_t R = sh_reflect((vec3_t){-L.x, -L.y, -L.z}, N);
+        float s = sh_max(sh_dot(R, V), 0.0f);
+        if (s > 0.0f) spec = powf(s, u->roughness);
+    }
+    
+    /* Mix Texture with Vertex Color (Multiply) */
+    float base_r = tex_col.x * u->color.x * interpolated->color.x;
+    float base_g = tex_col.y * u->color.y * interpolated->color.y;
+    float base_b = tex_col.z * u->color.z * interpolated->color.z;
+    
+    float r = base_r * (diff + amb) + spec * 0.4f;
+    float g = base_g * (diff + amb) + spec * 0.4f;
+    float b = base_b * (diff + amb) + spec * 0.4f;
     
     out.color.x = r * u->opacity.x;
     out.color.y = g * u->opacity.y;
