@@ -373,6 +373,7 @@ int main(int argc, char* argv[]) {
                 u.specular_map_ptr = NULL;
             } else if (group->material) {
                 spr_uniforms_set_color(&u, group->material->Kd.x, group->material->Kd.y, group->material->Kd.z, group->material->d);
+                spr_uniforms_set_opacity(&u, group->material->d, group->material->d, group->material->d);
                 u.roughness = group->material->Ns;
                 u.texture_ptr = group->material->map_Kd;
                 u.specular_map_ptr = group->material->map_Ks;
@@ -466,11 +467,11 @@ int main(int argc, char* argv[]) {
             if (mesh->materials) {
                 for (int i=0; i<mesh->material_count; ++i) {
                     if (mesh->materials[i].map_Kd && mesh->materials[i].map_Kd->sample_count > 0) {
-                        snprintf(stats_buf, sizeof(stats_buf), "%.10s(D): %llu", mesh->materials[i].name, (unsigned long long)mesh->materials[i].map_Kd->sample_count);
+                        snprintf(stats_buf, sizeof(stats_buf), "[%d] %.20s(D): %llu", i, mesh->materials[i].name, (unsigned long long)mesh->materials[i].map_Kd->sample_count);
                         draw_string_overlay(spr_get_color_buffer(ctx), win_width, win_height, 10, y, stats_buf, col); y += 12;
                     }
                     if (mesh->materials[i].map_Ks && mesh->materials[i].map_Ks->sample_count > 0) {
-                        snprintf(stats_buf, sizeof(stats_buf), "%.10s(S): %llu", mesh->materials[i].name, (unsigned long long)mesh->materials[i].map_Ks->sample_count);
+                        snprintf(stats_buf, sizeof(stats_buf), "[%d] %.20s(S): %llu", i, mesh->materials[i].name, (unsigned long long)mesh->materials[i].map_Ks->sample_count);
                         draw_string_overlay(spr_get_color_buffer(ctx), win_width, win_height, 10, y, stats_buf, col); y += 12;
                     }
                 }

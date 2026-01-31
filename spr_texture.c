@@ -17,7 +17,10 @@ spr_texture_t* spr_texture_load(const char* filename) {
     */
     unsigned char *data = stbi_load(filename, &w, &h, &n, 0);
     
-    if (!data) return NULL;
+    if (!data) {
+        printf("SPR Texture: Failed to load %s (stbi error: %s)\n", filename, stbi_failure_reason());
+        return NULL;
+    }
     
     spr_texture_t* tex = (spr_texture_t*)malloc(sizeof(spr_texture_t));
     if (!tex) {

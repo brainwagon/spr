@@ -120,6 +120,10 @@ static void parse_mtl(const char* mtl_path, dyn_array_t* materials) {
             ptr += 6; while (*ptr == ' ' || *ptr == '\t') ptr++;
             char* path = concat_path(dir, ptr);
             current_mat->map_Kd = spr_texture_load(path);
+            /* If Kd is near-black but map is present, default Kd to White to allow texture to show */
+            if (current_mat->map_Kd && current_mat->Kd.x < 0.01f && current_mat->Kd.y < 0.01f && current_mat->Kd.z < 0.01f) {
+                current_mat->Kd.x = 1.0f; current_mat->Kd.y = 1.0f; current_mat->Kd.z = 1.0f;
+            }
             free(path);
         } else if (strncmp(ptr, "map_Ks", 6) == 0 && isspace(ptr[6])) {
             ptr += 6; while (*ptr == ' ' || *ptr == '\t') ptr++;
