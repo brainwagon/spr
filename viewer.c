@@ -453,6 +453,9 @@ int main(int argc, char* argv[]) {
             snprintf(stats_buf, sizeof(stats_buf), "Tex Samples: %llu", (unsigned long long)stats.texture_samples);
             draw_string_overlay(spr_get_color_buffer(ctx), win_width, win_height, 10, y, stats_buf, col); y += 12;
 
+            snprintf(stats_buf, sizeof(stats_buf), "Triangles: %llu", (unsigned long long)stats.total_triangles);
+            draw_string_overlay(spr_get_color_buffer(ctx), win_width, win_height, 10, y, stats_buf, col); y += 12;
+
             snprintf(stats_buf, sizeof(stats_buf), "Shader: %s", get_shader_name(current_shader));
             draw_string_overlay(spr_get_color_buffer(ctx), win_width, win_height, 10, y, stats_buf, col); y += 12;
             

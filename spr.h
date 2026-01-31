@@ -114,6 +114,7 @@ typedef struct {
     int peak_fragments;   /* High water mark since last clear */
     int total_chunks;     /* Number of memory chunks currently allocated */
     uint64_t texture_samples; /* Number of texture lookups per frame */
+    uint64_t total_triangles; /* Number of triangles processed per frame */
 } spr_stats_t;
 
 spr_stats_t spr_get_stats(spr_context_t* ctx);

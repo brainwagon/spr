@@ -911,6 +911,7 @@ void spr_clear(spr_context_t* ctx, uint32_t color, float depth) {
     ctx->stats.active_fragments = 0;
     ctx->stats.peak_fragments = 0;
     ctx->stats.texture_samples = 0;
+    ctx->stats.total_triangles = 0;
 }
 
 spr_stats_t spr_get_stats(spr_context_t* ctx) {
@@ -983,6 +984,8 @@ void spr_draw_triangle_simple(spr_context_t* ctx, vec3_t v0, vec3_t v1, vec3_t v
 
 void spr_draw_triangles(spr_context_t* ctx, int count, const void* vertices, size_t stride) {
     if (!ctx || !ctx->current_vs || !ctx->current_fs || !ctx->rasterizer_func) return; 
+    
+    ctx->stats.total_triangles += count;
     
     int i;
     const uint8_t* v_ptr = (const uint8_t*)vertices;
