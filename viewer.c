@@ -76,9 +76,28 @@ const char* get_shader_name(shader_type_t s) {
     }
 }
 
+void print_help(const char* prog_name) {
+    printf("Usage: %s <stl_file> [texture_file] [options]\n", prog_name);
+    printf("\nOptions:\n");
+    printf("  -simd       Use SIMD rasterizer (if available)\n");
+    printf("  -cpu        Use CPU rasterizer (default)\n");
+    printf("  -h, --help  Show this help message\n");
+    printf("\nControls:\n");
+    printf("  Left Drag   Rotate Camera (Orbit)\n");
+    printf("  Shift+Left  Rotate Light\n");
+    printf("  Right Drag  Pan\n");
+    printf("  Wheel       Zoom\n");
+    printf("  's'         Toggle Stats Overlay (FPS, Frags)\n");
+    printf("  'o'         Toggle Transparency (Opaque/Transparent)\n");
+    printf("  'c'         Toggle Base Color (Grey/Red)\n");
+    printf("  'b'         Toggle Back-face Culling\n");
+    printf("  '1'-'5'     Switch Shaders (Constant, Matte, Plastic, Metal, Painted)\n");
+    printf("  ESC         Exit\n");
+}
+
 int main(int argc, char* argv[]) {
     if (argc < 2) {
-        printf("Usage: %s <stl_file> [-simd | -cpu]\n", argv[0]);
+        print_help(argv[0]);
         return 1;
     }
 
@@ -92,6 +111,9 @@ int main(int argc, char* argv[]) {
             mode = SPR_RASTERIZER_SIMD;
         } else if (strcmp(argv[i], "-cpu") == 0) {
             mode = SPR_RASTERIZER_CPU;
+        } else if (strcmp(argv[i], "-h") == 0 || strcmp(argv[i], "--help") == 0) {
+            print_help(argv[0]);
+            return 0;
         } else if (argv[i][0] != '-') {
             if (!filename) filename = argv[i];
             else if (!tex_filename) tex_filename = argv[i];
@@ -99,7 +121,8 @@ int main(int argc, char* argv[]) {
     }
 
     if (!filename) {
-        printf("Usage: %s <stl_file> [texture_file] [-simd | -cpu]\n", argv[0]);
+        printf("Error: No STL file specified.\n");
+        print_help(argv[0]);
         return 1;
     }
 
