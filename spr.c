@@ -407,9 +407,9 @@ static void spr_rasterize_triangle_cpu(spr_context_t* ctx, const spr_vertex_out_
                     interp.tangent.z = v0->tangent.z * wa + v1->tangent.z * wb + v2->tangent.z * wg;
                     interp.tangent.w = v0->tangent.w;
 
-                    interp.barycentric.x = alpha;
-                    interp.barycentric.y = beta;
-                    interp.barycentric.z = gamma;
+                    interp.barycentric.x = v0->barycentric.x * wa + v1->barycentric.x * wb + v2->barycentric.x * wg;
+                    interp.barycentric.y = v0->barycentric.y * wa + v1->barycentric.y * wb + v2->barycentric.y * wg;
+                    interp.barycentric.z = v0->barycentric.z * wa + v1->barycentric.z * wb + v2->barycentric.z * wg;
 
                     spr_fs_output_t out = ctx->current_fs(ctx->current_uniforms, &interp);
                     insert_fragment(ctx, y * width + x, z, out);
@@ -558,9 +558,9 @@ static void spr_rasterize_triangle_simd(spr_context_t* ctx, const spr_vertex_out
                             interp.tangent.z = v0->tangent.z * wa + v1->tangent.z * wb + v2->tangent.z * wg;
                             interp.tangent.w = v0->tangent.w;
 
-                            interp.barycentric.x = alpha;
-                            interp.barycentric.y = beta;
-                            interp.barycentric.z = gamma;
+                            interp.barycentric.x = v0->barycentric.x * wa + v1->barycentric.x * wb + v2->barycentric.x * wg;
+                            interp.barycentric.y = v0->barycentric.y * wa + v1->barycentric.y * wb + v2->barycentric.y * wg;
+                            interp.barycentric.z = v0->barycentric.z * wa + v1->barycentric.z * wb + v2->barycentric.z * wg;
 
                             spr_fs_output_t out = ctx->current_fs(ctx->current_uniforms, &interp);
                             insert_fragment(ctx, y * width + px, z, out);
@@ -623,9 +623,9 @@ static void spr_rasterize_triangle_simd(spr_context_t* ctx, const spr_vertex_out
                     interp.tangent.z = v0->tangent.z * wa + v1->tangent.z * wb + v2->tangent.z * wg;
                     interp.tangent.w = v0->tangent.w;
 
-                    interp.barycentric.x = alpha;
-                    interp.barycentric.y = beta;
-                    interp.barycentric.z = gamma;
+                    interp.barycentric.x = v0->barycentric.x * wa + v1->barycentric.x * wb + v2->barycentric.x * wg;
+                    interp.barycentric.y = v0->barycentric.y * wa + v1->barycentric.y * wb + v2->barycentric.y * wg;
+                    interp.barycentric.z = v0->barycentric.z * wa + v1->barycentric.z * wb + v2->barycentric.z * wg;
 
                     spr_fs_output_t out = ctx->current_fs(ctx->current_uniforms, &interp);
                     insert_fragment(ctx, y * width + x, z, out);
@@ -982,6 +982,15 @@ static void spr_vertex_interp(spr_vertex_out_t* out, const spr_vertex_out_t* v0,
     out->color.y = v0->color.y + (v1->color.y - v0->color.y) * t;
     out->color.z = v0->color.z + (v1->color.z - v0->color.z) * t;
     out->color.w = v0->color.w + (v1->color.w - v0->color.w) * t;
+    
+    out->tangent.x = v0->tangent.x + (v1->tangent.x - v0->tangent.x) * t;
+    out->tangent.y = v0->tangent.y + (v1->tangent.y - v0->tangent.y) * t;
+    out->tangent.z = v0->tangent.z + (v1->tangent.z - v0->tangent.z) * t;
+    out->tangent.w = v0->tangent.w; /* Handedness usually constant */
+
+    out->barycentric.x = v0->barycentric.x + (v1->barycentric.x - v0->barycentric.x) * t;
+    out->barycentric.y = v0->barycentric.y + (v1->barycentric.y - v0->barycentric.y) * t;
+    out->barycentric.z = v0->barycentric.z + (v1->barycentric.z - v0->barycentric.z) * t;
 }
 
 static void spr_viewport_transform(spr_context_t* ctx, spr_vertex_out_t* v) {
@@ -1012,6 +1021,10 @@ void spr_draw_triangles(spr_context_t* ctx, int count, const void* vertices, siz
         ctx->current_vs(ctx->current_uniforms, v_ptr, &tri[0]); v_ptr += stride;
         ctx->current_vs(ctx->current_uniforms, v_ptr, &tri[1]); v_ptr += stride;
         ctx->current_vs(ctx->current_uniforms, v_ptr, &tri[2]); v_ptr += stride;
+        
+        tri[0].barycentric.x = 1.0f; tri[0].barycentric.y = 0.0f; tri[0].barycentric.z = 0.0f;
+        tri[1].barycentric.x = 0.0f; tri[1].barycentric.y = 1.0f; tri[1].barycentric.z = 0.0f;
+        tri[2].barycentric.x = 0.0f; tri[2].barycentric.y = 0.0f; tri[2].barycentric.z = 1.0f;
         
         /* Sutherland-Hodgman clipping against near plane (w >= epsilon) */
         spr_vertex_out_t clipped[4];
