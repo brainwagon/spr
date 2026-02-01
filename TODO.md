@@ -1,13 +1,12 @@
 # Future Tasks
 
 ## Rendering
-*   [ ] **SIMD Fragment Shaders**: Currently, the rasterizer processes pixels in groups of 4 (SIMD), but calls the fragment shader function pointer *serially* for each active pixel. Changing the shader interface to accept `spr_vertex_out_t_4x` would allow fully vectorized shading.
-*   [ ] **Texture Mapping**: The pipeline supports UV coordinates, but there is no texture sampler or image loading support.
-*   [ ] **Back-face Culling**: Implement an option to cull back-facing triangles before rasterization to save processing time on closed meshes.
+*   [x] **Texture Mapping**: Basic support is implemented via `spr_texture.c` and used in `Painted Plastic` shader.
+*   [x] **Back-face Culling**: Implemented via `spr_enable_cull_face`.
 
 ## File Formats
-*   [ ] **OBJ Support**: The `cat` directory contains an `.obj` file. Implementing a simple OBJ loader would allow viewing this and other common models.
+*   [x] **OBJ Support**: Unified loader in `spr_loader.c` supports OBJ/MTL.
 
 ## Viewer
-*   [ ] **Lighting Controls**: Allow rotating the light source interactively.
-*   [ ] **Wireframe Mode**: A generic way to render wireframes (perhaps via barycentric coordinates in the shader).
+*   [x] **Lighting Controls**: Implemented in `viewer.c` (Shift+Left Drag).
+*   [x] **Wireframe Mode**: Implemented via barycentric coordinates and shader overlay.

@@ -30,6 +30,8 @@ typedef struct {
     vec4_t color;
     vec2_t uv;
     vec3_t normal;
+    vec4_t tangent; /* Tangent vector (xyz) + handedness (w) */
+    vec3_t barycentric; /* Barycentric coordinates (alpha, beta, gamma) */
     float depth; 
 } spr_vertex_out_t;
 
@@ -38,6 +40,7 @@ typedef struct {
     vec3_t position;
     vec3_t normal;
     vec2_t uv;
+    vec4_t tangent;
 } spr_vertex_t;
 
 typedef struct {

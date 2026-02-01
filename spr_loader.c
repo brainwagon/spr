@@ -5,6 +5,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
+#include <math.h>
 
 #define MAX_LINE 1024
 
@@ -112,10 +113,14 @@ static void parse_mtl(const char* mtl_path, dyn_array_t* materials) {
             sscanf(ptr+2, "%f %f %f", &current_mat->Kd.x, &current_mat->Kd.y, &current_mat->Kd.z);
         } else if (strncmp(ptr, "Ks", 2) == 0 && isspace(ptr[2])) {
             sscanf(ptr+2, "%f %f %f", &current_mat->Ks.x, &current_mat->Ks.y, &current_mat->Ks.z);
+        } else if (strncmp(ptr, "Ke", 2) == 0 && isspace(ptr[2])) {
+            sscanf(ptr+2, "%f %f %f", &current_mat->Ke.x, &current_mat->Ke.y, &current_mat->Ke.z);
         } else if (strncmp(ptr, "Ns", 2) == 0 && isspace(ptr[2])) {
             sscanf(ptr+2, "%f", &current_mat->Ns);
         } else if (strncmp(ptr, "d", 1) == 0 && isspace(ptr[1])) {
             sscanf(ptr+1, "%f", &current_mat->d);
+        } else if (strncmp(ptr, "Tr", 2) == 0 && isspace(ptr[2])) {
+            float tr; sscanf(ptr+2, "%f", &tr); current_mat->d = 1.0f - tr;
         } else if (strncmp(ptr, "map_Kd", 6) == 0 && isspace(ptr[6])) {
             ptr += 6; while (*ptr == ' ' || *ptr == '\t') ptr++;
             char* path = concat_path(dir, ptr);
@@ -130,6 +135,31 @@ static void parse_mtl(const char* mtl_path, dyn_array_t* materials) {
             char* path = concat_path(dir, ptr);
             current_mat->map_Ks = spr_texture_load(path);
             free(path);
+        } else if (strncmp(ptr, "map_Ns", 6) == 0 && isspace(ptr[6])) {
+            ptr += 6; while (*ptr == ' ' || *ptr == '\t') ptr++;
+            char* path = concat_path(dir, ptr);
+            current_mat->map_Ns = spr_texture_load(path);
+            free(path);
+        } else if (strncmp(ptr, "map_d", 5) == 0 && isspace(ptr[5])) {
+            ptr += 5; while (*ptr == ' ' || *ptr == '\t') ptr++;
+            char* path = concat_path(dir, ptr);
+            current_mat->map_d = spr_texture_load(path);
+            free(path);
+        } else if (strncmp(ptr, "map_Ke", 6) == 0 && isspace(ptr[6])) {
+            ptr += 6; while (*ptr == ' ' || *ptr == '\t') ptr++;
+            char* path = concat_path(dir, ptr);
+            current_mat->map_Ke = spr_texture_load(path);
+            free(path);
+        } else if (strncmp(ptr, "map_Bump", 8) == 0 && isspace(ptr[8])) {
+            ptr += 8; while (*ptr == ' ' || *ptr == '\t') ptr++;
+            char* path = concat_path(dir, ptr);
+            current_mat->map_Bump = spr_texture_load(path);
+            free(path);
+        } else if (strncmp(ptr, "norm", 4) == 0 && isspace(ptr[4])) {
+            ptr += 4; while (*ptr == ' ' || *ptr == '\t') ptr++;
+            char* path = concat_path(dir, ptr);
+            current_mat->norm = spr_texture_load(path);
+            free(path);
         }
     }
     
@@ -143,6 +173,49 @@ static spr_material_t* find_material(dyn_array_t* materials, const char* name) {
         if (strcmp(mat->name, name) == 0) return mat;
     }
     return NULL;
+}
+
+/* --- Tangent Calculation --- */
+
+static void calc_tangent_and_assign(spr_vertex_t* v0, spr_vertex_t* v1, spr_vertex_t* v2) {
+    vec3_t edge1 = {v1->position.x - v0->position.x, v1->position.y - v0->position.y, v1->position.z - v0->position.z};
+    vec3_t edge2 = {v2->position.x - v0->position.x, v2->position.y - v0->position.y, v2->position.z - v0->position.z};
+    vec2_t deltaUV1 = {v1->uv.x - v0->uv.x, v1->uv.y - v0->uv.y};
+    vec2_t deltaUV2 = {v2->uv.x - v0->uv.x, v2->uv.y - v0->uv.y};
+    
+    float f = 1.0f / (deltaUV1.x * deltaUV2.y - deltaUV2.x * deltaUV1.y);
+    /* Safe check for zero area UVs */
+    if (deltaUV1.x * deltaUV2.y == deltaUV2.x * deltaUV1.y) f = 0.0f;
+    
+    vec3_t tangent;
+    tangent.x = f * (deltaUV2.y * edge1.x - deltaUV1.y * edge2.x);
+    tangent.y = f * (deltaUV2.y * edge1.y - deltaUV1.y * edge2.y);
+    tangent.z = f * (deltaUV2.y * edge1.z - deltaUV1.y * edge2.z);
+    
+    /* Normalize geometric tangent */
+    float len = sqrtf(tangent.x*tangent.x + tangent.y*tangent.y + tangent.z*tangent.z);
+    if (len > 0) { tangent.x/=len; tangent.y/=len; tangent.z/=len; }
+    
+    /* Assign to all 3 vertices, orthogonalizing against their normals */
+    spr_vertex_t* verts[3] = {v0, v1, v2};
+    for (int i=0; i<3; ++i) {
+        vec3_t n = verts[i]->normal;
+        /* Gram-Schmidt orthogonalize: t = t - n * dot(n, t) */
+        float dot = n.x*tangent.x + n.y*tangent.y + n.z*tangent.z;
+        vec3_t t;
+        t.x = tangent.x - n.x * dot;
+        t.y = tangent.y - n.y * dot;
+        t.z = tangent.z - n.z * dot;
+        
+        len = sqrtf(t.x*t.x + t.y*t.y + t.z*t.z);
+        if (len > 0) { t.x/=len; t.y/=len; t.z/=len; }
+        else { t.x=1; t.y=0; t.z=0; } /* Fallback */
+        
+        verts[i]->tangent.x = t.x;
+        verts[i]->tangent.y = t.y;
+        verts[i]->tangent.z = t.z;
+        verts[i]->tangent.w = 1.0f; 
+    }
 }
 
 /* --- OBJ Loader --- */
@@ -257,6 +330,13 @@ static spr_mesh_t* load_obj(const char* filename) {
                         if (uv) out_v->uv = *uv;
                         else { out_v->uv.x=0; out_v->uv.y=0; }
                     }
+                    
+                    /* Calculate Tangents for the last 3 vertices */
+                    spr_vertex_t* v_ptr = (spr_vertex_t*)vertices.data;
+                    int v_count = vertices.count;
+                    if (v_count >= 3) {
+                         calc_tangent_and_assign(&v_ptr[v_count-3], &v_ptr[v_count-2], &v_ptr[v_count-1]);
+                    }
                 }
             }
             da_free(&indices);
@@ -333,6 +413,11 @@ void spr_free_mesh(spr_mesh_t* mesh) {
             for (int i=0; i<mesh->material_count; ++i) {
                 if (mesh->materials[i].map_Kd) spr_texture_free(mesh->materials[i].map_Kd);
                 if (mesh->materials[i].map_Ks) spr_texture_free(mesh->materials[i].map_Ks);
+                if (mesh->materials[i].map_Ns) spr_texture_free(mesh->materials[i].map_Ns);
+                if (mesh->materials[i].map_d) spr_texture_free(mesh->materials[i].map_d);
+                if (mesh->materials[i].map_Ke) spr_texture_free(mesh->materials[i].map_Ke);
+                if (mesh->materials[i].map_Bump) spr_texture_free(mesh->materials[i].map_Bump);
+                if (mesh->materials[i].norm) spr_texture_free(mesh->materials[i].norm);
             }
             free(mesh->materials);
         }

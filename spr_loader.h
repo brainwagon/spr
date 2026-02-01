@@ -15,11 +15,17 @@ typedef struct {
     vec3_t Ka; /* Ambient */
     vec3_t Kd; /* Diffuse */
     vec3_t Ks; /* Specular */
+    vec3_t Ke; /* Emissive */
     float Ns;  /* Specular Exponent (Shininess) */
     float d;   /* Dissolve (Opacity) */
     
-    spr_texture_t* map_Kd; /* Diffuse Map */
-    spr_texture_t* map_Ks; /* Specular Map */
+    spr_texture_t* map_Kd;   /* Diffuse Map */
+    spr_texture_t* map_Ks;   /* Specular Map */
+    spr_texture_t* map_Ns;   /* Specular Exponent Map */
+    spr_texture_t* map_d;    /* Dissolve/Opacity Map */
+    spr_texture_t* map_Ke;   /* Emissive Map */
+    spr_texture_t* map_Bump; /* Bump Map (Height) */
+    spr_texture_t* norm;     /* Normal Map */
 } spr_material_t;
 
 /* A sub-mesh using a specific material */

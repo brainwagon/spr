@@ -402,6 +402,15 @@ static void spr_rasterize_triangle_cpu(spr_context_t* ctx, const spr_vertex_out_
                     interp.normal.y = v0->normal.y * wa + v1->normal.y * wb + v2->normal.y * wg;
                     interp.normal.z = v0->normal.z * wa + v1->normal.z * wb + v2->normal.z * wg;
 
+                    interp.tangent.x = v0->tangent.x * wa + v1->tangent.x * wb + v2->tangent.x * wg;
+                    interp.tangent.y = v0->tangent.y * wa + v1->tangent.y * wb + v2->tangent.y * wg;
+                    interp.tangent.z = v0->tangent.z * wa + v1->tangent.z * wb + v2->tangent.z * wg;
+                    interp.tangent.w = v0->tangent.w;
+
+                    interp.barycentric.x = alpha;
+                    interp.barycentric.y = beta;
+                    interp.barycentric.z = gamma;
+
                     spr_fs_output_t out = ctx->current_fs(ctx->current_uniforms, &interp);
                     insert_fragment(ctx, y * width + x, z, out);
                 }
@@ -544,6 +553,15 @@ static void spr_rasterize_triangle_simd(spr_context_t* ctx, const spr_vertex_out
                             interp.normal.y = v0->normal.y * wa + v1->normal.y * wb + v2->normal.y * wg;
                             interp.normal.z = v0->normal.z * wa + v1->normal.z * wb + v2->normal.z * wg;
 
+                            interp.tangent.x = v0->tangent.x * wa + v1->tangent.x * wb + v2->tangent.x * wg;
+                            interp.tangent.y = v0->tangent.y * wa + v1->tangent.y * wb + v2->tangent.y * wg;
+                            interp.tangent.z = v0->tangent.z * wa + v1->tangent.z * wb + v2->tangent.z * wg;
+                            interp.tangent.w = v0->tangent.w;
+
+                            interp.barycentric.x = alpha;
+                            interp.barycentric.y = beta;
+                            interp.barycentric.z = gamma;
+
                             spr_fs_output_t out = ctx->current_fs(ctx->current_uniforms, &interp);
                             insert_fragment(ctx, y * width + px, z, out);
                         }
@@ -599,6 +617,15 @@ static void spr_rasterize_triangle_simd(spr_context_t* ctx, const spr_vertex_out
                     interp.normal.x = v0->normal.x * wa + v1->normal.x * wb + v2->normal.x * wg;
                     interp.normal.y = v0->normal.y * wa + v1->normal.y * wb + v2->normal.y * wg;
                     interp.normal.z = v0->normal.z * wa + v1->normal.z * wb + v2->normal.z * wg;
+
+                    interp.tangent.x = v0->tangent.x * wa + v1->tangent.x * wb + v2->tangent.x * wg;
+                    interp.tangent.y = v0->tangent.y * wa + v1->tangent.y * wb + v2->tangent.y * wg;
+                    interp.tangent.z = v0->tangent.z * wa + v1->tangent.z * wb + v2->tangent.z * wg;
+                    interp.tangent.w = v0->tangent.w;
+
+                    interp.barycentric.x = alpha;
+                    interp.barycentric.y = beta;
+                    interp.barycentric.z = gamma;
 
                     spr_fs_output_t out = ctx->current_fs(ctx->current_uniforms, &interp);
                     insert_fragment(ctx, y * width + x, z, out);

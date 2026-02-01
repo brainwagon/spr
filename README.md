@@ -12,8 +12,8 @@ A minimalist C library for software-based 3D rendering, accompanied by a fully f
     *   Order-Independent Transparency (OIT) using a per-pixel fragment list.
     *   **Dynamic Memory**: Fragment allocation using chunks and free-list recycling to minimize overhead.
     *   **Occlusion Culling**: Early rejection of fragments and culling of occluded layers based on accumulated opacity (Threshold: 0.999).
-*   **Unified Loader**: Integrated support for **STL** and **Wavefront OBJ** (including `.mtl` material libraries).
-*   **Texturing**: Point-sampled texture mapping with UV wrapping. Supports JPG, PNG, and other formats via `stb_image.h`.
+*   **Unified Loader**: Integrated support for **STL** and **Wavefront OBJ** (including `.mtl` material libraries with full map support).
+*   **Texturing**: Point-sampled texture mapping with UV wrapping. Supports JPG, PNG, and other formats via `stb_image.h`. Note: `map_Bump` in MTL files is treated as an alias for `norm` (Normal Mapping).
 *   **Programmable Pipeline**: Support for custom **Vertex** and **Fragment** shaders.
 *   **SIMD Optimized**: Includes SSE2 optimized paths for high-performance rasterization.
 *   **Core Math**: 3D Matrices and Vectors via a transform stack (Push/Pop, ModelView/Projection).
@@ -72,7 +72,8 @@ make test_spr
 *   **'o' Key**: Toggle Transparency (Opaque / Translucent)
 *   **'c' Key**: Toggle Base Color (Grey / Red)
 *   **'b' Key**: Toggle Back-face Culling
-*   **1-5 Keys**: Switch Shaders (Constant, Matte, Plastic, Metal, Painted)
+*   **'w' Key**: Cycle Wireframe Mode (Off / Overlay / Only)
+*   **1-6 Keys**: Switch Shaders (Constant, Matte, Plastic, Metal, Painted, MTL)
 *   **ESC**: Exit
 
 ## Project Structure

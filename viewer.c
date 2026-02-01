@@ -61,7 +61,8 @@ typedef enum {
     SHADER_MATTE,
     SHADER_PLASTIC,
     SHADER_METAL,
-    SHADER_PAINTED_PLASTIC
+    SHADER_PAINTED_PLASTIC,
+    SHADER_MTL
 } shader_type_t;
 
 const char* get_shader_name(shader_type_t s) {
@@ -71,6 +72,7 @@ const char* get_shader_name(shader_type_t s) {
         case SHADER_PLASTIC: return "Plastic";
         case SHADER_METAL: return "Metal";
         case SHADER_PAINTED_PLASTIC: return "Painted";
+        case SHADER_MTL: return "MTL (Full)";
         default: return "Unknown";
     }
 }
@@ -90,7 +92,8 @@ void print_help(const char* prog_name) {
     printf("  'o'         Toggle Transparency (Opaque/Transparent)\n");
     printf("  'c'         Toggle Base Color (Grey/Red)\n");
     printf("  'b'         Toggle Back-face Culling\n");
-    printf("  '1'-'5'     Switch Shaders (Constant, Matte, Plastic, Metal, Painted)\n");
+    printf("  'w'         Cycle Wireframe Mode (Off/Overlay/Only)\n");
+    printf("  '1'-'6'     Switch Shaders (..., Painted, MTL)\n");
     printf("  ESC         Exit\n");
 }
 
@@ -154,6 +157,8 @@ int main(int argc, char* argv[]) {
     } else if (mesh->texture) {
         spr_tex = mesh->texture;
         current_shader = SHADER_PAINTED_PLASTIC; /* Auto-switch */
+    } else if (mesh->type == SPR_MESH_OBJ) {
+        current_shader = SHADER_MTL;
     }
     
     /* Calculate Bounds for auto-centering */
@@ -223,6 +228,7 @@ int main(int argc, char* argv[]) {
     int color_mode = 0; /* 0: Grey, 1: Red */
     int opacity_mode = 0; /* 0: Opaque, 1: Transparent (0.5) */
     int cull_mode = 0; /* 0: None, 1: Backface */
+    int wire_mode = 0; /* 0: Off, 1: Overlay, 2: Wireframe only */
     double current_render_ms = 0.0;
     double accumulated_render_ms = 0.0;
     uint32_t last_time = SDL_GetTicks();
@@ -252,11 +258,13 @@ int main(int argc, char* argv[]) {
                     case SDLK_c: color_mode = !color_mode; break;
                     case SDLK_o: opacity_mode = !opacity_mode; break;
                     case SDLK_b: cull_mode = !cull_mode; break;
+                    case SDLK_w: wire_mode = (wire_mode + 1) % 3; break;
                     case SDLK_1: current_shader = SHADER_CONSTANT; break;
                     case SDLK_2: current_shader = SHADER_MATTE; break;
                     case SDLK_3: current_shader = SHADER_PLASTIC; break;
                     case SDLK_4: current_shader = SHADER_METAL; break;
                     case SDLK_5: current_shader = SHADER_PAINTED_PLASTIC; break;
+                    case SDLK_6: current_shader = SHADER_MTL; break;
                 }
             }
             else if (e.type == SDL_MOUSEBUTTONDOWN) {
@@ -307,6 +315,11 @@ int main(int argc, char* argv[]) {
             for (int i=0; i<mesh->material_count; ++i) {
                 if (mesh->materials[i].map_Kd) mesh->materials[i].map_Kd->sample_count = 0;
                 if (mesh->materials[i].map_Ks) mesh->materials[i].map_Ks->sample_count = 0;
+                if (mesh->materials[i].map_Ns) mesh->materials[i].map_Ns->sample_count = 0;
+                if (mesh->materials[i].map_d) mesh->materials[i].map_d->sample_count = 0;
+                if (mesh->materials[i].map_Ke) mesh->materials[i].map_Ke->sample_count = 0;
+                if (mesh->materials[i].map_Bump) mesh->materials[i].map_Bump->sample_count = 0;
+                if (mesh->materials[i].norm) mesh->materials[i].norm->sample_count = 0;
             }
         }
         
@@ -357,6 +370,12 @@ int main(int argc, char* argv[]) {
         
         u.roughness = 32.0f;
 
+        /* Wireframe */
+        u.wireframe = wire_mode;
+        u.wireframe_width = 0.015f;
+        u.wireframe_color = (vec3_t){0, 0, 0}; /* Black wires */
+        if (wire_mode == 2) u.wireframe_color = (vec3_t){0, 1, 0}; /* Green wires if only wireframe */
+
         /* Culling */
         spr_enable_cull_face(ctx, cull_mode);
 
@@ -371,16 +390,35 @@ int main(int argc, char* argv[]) {
                 /* Global override */
                 u.texture_ptr = spr_tex;
                 u.specular_map_ptr = NULL;
+                u.roughness_map_ptr = NULL;
+                u.opacity_map_ptr = NULL;
+                u.emissive_map_ptr = NULL;
+                u.normal_map_ptr = NULL;
+                u.Ke = (vec3_t){0,0,0};
+                u.Ks = (vec3_t){0,0,0};
             } else if (group->material) {
                 spr_uniforms_set_color(&u, group->material->Kd.x, group->material->Kd.y, group->material->Kd.z, group->material->d);
                 spr_uniforms_set_opacity(&u, group->material->d, group->material->d, group->material->d);
                 u.roughness = group->material->Ns;
                 u.texture_ptr = group->material->map_Kd;
                 u.specular_map_ptr = group->material->map_Ks;
+                
+                u.roughness_map_ptr = group->material->map_Ns;
+                u.opacity_map_ptr = group->material->map_d;
+                u.emissive_map_ptr = group->material->map_Ke;
+                u.normal_map_ptr = group->material->norm ? group->material->norm : group->material->map_Bump;
+                u.Ke = group->material->Ke;
+                u.Ks = group->material->Ks;
             } else {
                 /* Reset to global defaults if no material */
                 u.texture_ptr = NULL;
                 u.specular_map_ptr = NULL;
+                u.roughness_map_ptr = NULL;
+                u.opacity_map_ptr = NULL;
+                u.emissive_map_ptr = NULL;
+                u.normal_map_ptr = NULL;
+                u.Ke = (vec3_t){0,0,0};
+                u.Ks = (vec3_t){0,0,0};
                 /* Note: u.color was set by color_mode block earlier */
             }
             
@@ -413,6 +451,9 @@ int main(int argc, char* argv[]) {
                     break;
                 case SHADER_PAINTED_PLASTIC:
                     fs = spr_shader_paintedplastic_fs; vs = spr_shader_paintedplastic_vs;
+                    break;
+                case SHADER_MTL:
+                    fs = spr_shader_mtl_fs; vs = spr_shader_matte_vs;
                     break;
             }
             
@@ -461,6 +502,10 @@ int main(int argc, char* argv[]) {
             
             snprintf(stats_buf, sizeof(stats_buf), "Cull: %s", cull_mode ? "ON" : "OFF");
             draw_string_overlay(spr_get_color_buffer(ctx), win_width, win_height, 10, y, stats_buf, col); y += 12;
+
+            const char* wire_names[] = {"OFF", "Overlay", "Only"};
+            snprintf(stats_buf, sizeof(stats_buf), "Wire: %s", wire_names[wire_mode]);
+            draw_string_overlay(spr_get_color_buffer(ctx), win_width, win_height, 10, y, stats_buf, col); y += 12;
             
             /* Per-Texture Stats */
             if (tex_filename && spr_tex) {
@@ -469,12 +514,33 @@ int main(int argc, char* argv[]) {
             }
             if (mesh->materials) {
                 for (int i=0; i<mesh->material_count; ++i) {
-                    if (mesh->materials[i].map_Kd && mesh->materials[i].map_Kd->sample_count > 0) {
-                        snprintf(stats_buf, sizeof(stats_buf), "[%d] %.20s(D): %llu", i, mesh->materials[i].name, (unsigned long long)mesh->materials[i].map_Kd->sample_count);
+                    spr_material_t* m = &mesh->materials[i];
+                    if (m->map_Kd && m->map_Kd->sample_count > 0) {
+                        snprintf(stats_buf, sizeof(stats_buf), "[%d] %.10s(Kd): %llu", i, m->name, (unsigned long long)m->map_Kd->sample_count);
                         draw_string_overlay(spr_get_color_buffer(ctx), win_width, win_height, 10, y, stats_buf, col); y += 12;
                     }
-                    if (mesh->materials[i].map_Ks && mesh->materials[i].map_Ks->sample_count > 0) {
-                        snprintf(stats_buf, sizeof(stats_buf), "[%d] %.20s(S): %llu", i, mesh->materials[i].name, (unsigned long long)mesh->materials[i].map_Ks->sample_count);
+                    if (m->map_Ks && m->map_Ks->sample_count > 0) {
+                        snprintf(stats_buf, sizeof(stats_buf), "[%d] %.10s(Ks): %llu", i, m->name, (unsigned long long)m->map_Ks->sample_count);
+                        draw_string_overlay(spr_get_color_buffer(ctx), win_width, win_height, 10, y, stats_buf, col); y += 12;
+                    }
+                    if (m->map_Ns && m->map_Ns->sample_count > 0) {
+                        snprintf(stats_buf, sizeof(stats_buf), "[%d] %.10s(Ns): %llu", i, m->name, (unsigned long long)m->map_Ns->sample_count);
+                        draw_string_overlay(spr_get_color_buffer(ctx), win_width, win_height, 10, y, stats_buf, col); y += 12;
+                    }
+                    if (m->map_d && m->map_d->sample_count > 0) {
+                        snprintf(stats_buf, sizeof(stats_buf), "[%d] %.10s(d): %llu", i, m->name, (unsigned long long)m->map_d->sample_count);
+                        draw_string_overlay(spr_get_color_buffer(ctx), win_width, win_height, 10, y, stats_buf, col); y += 12;
+                    }
+                    if (m->map_Ke && m->map_Ke->sample_count > 0) {
+                        snprintf(stats_buf, sizeof(stats_buf), "[%d] %.10s(Ke): %llu", i, m->name, (unsigned long long)m->map_Ke->sample_count);
+                        draw_string_overlay(spr_get_color_buffer(ctx), win_width, win_height, 10, y, stats_buf, col); y += 12;
+                    }
+                    if (m->map_Bump && m->map_Bump->sample_count > 0) {
+                        snprintf(stats_buf, sizeof(stats_buf), "[%d] %.10s(Bump): %llu", i, m->name, (unsigned long long)m->map_Bump->sample_count);
+                        draw_string_overlay(spr_get_color_buffer(ctx), win_width, win_height, 10, y, stats_buf, col); y += 12;
+                    }
+                    if (m->norm && m->norm->sample_count > 0) {
+                        snprintf(stats_buf, sizeof(stats_buf), "[%d] %.10s(Norm): %llu", i, m->name, (unsigned long long)m->norm->sample_count);
                         draw_string_overlay(spr_get_color_buffer(ctx), win_width, win_height, 10, y, stats_buf, col); y += 12;
                     }
                 }
