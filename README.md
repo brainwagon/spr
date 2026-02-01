@@ -34,23 +34,26 @@ A minimalist C library for software-based 3D rendering, accompanied by a fully f
 
 ## Building
 
-The project uses a simple `Makefile`. Building with textures is enabled by default.
+The project uses a unified `Makefile` that builds the library and all applications.
 
-### Build the Viewer
+### Build Everything
 ```bash
 make
 ```
 
-### Build the Standalone Test (No SDL required)
+### Build Specific Targets
 ```bash
-make test_spr
+make lib       # Build libspr.a
+make viewer    # Build the viewer
+make template  # Build the template app
+make test      # Build the headless test
 ```
 
 ## Usage
 
 ### Running the Viewer
 ```bash
-./viewer <model_file> [texture_file] [options]
+./bin/viewer <model_file> [texture_file] [options]
 ```
 
 **Options**:
@@ -78,12 +81,16 @@ make test_spr
 
 ## Project Structure
 
-*   `spr.[h|c]`: Core renderer library (A-Buffer, SIMD, Math).
-*   `spr_shaders.[h|c]`: Library of common shading models.
-*   `spr_loader.[h|c]`: Unified STL/OBJ mesh loader with MTL support.
-*   `spr_texture.[h|c]`: Texture loading and sampling (wraps `stb_image.h`).
-*   `stl.[h|c]`: Legacy STL file loader.
-*   `viewer.c`: Interactive viewer application.
-*   `font.h`: Minimal 8x8 bitmap font for overlay rendering.
-*   `Makefile`: Build system.
-*   `docs/`: Implementation details and architecture notes.
+*   `src/`: Core `libspr` library source code.
+    *   `spr.[h|c]`: Core renderer.
+    *   `spr_shaders.[h|c]`: Shader library.
+    *   `spr_loader.[h|c]`: Mesh loader.
+    *   `spr_texture.[h|c]`: Texture management.
+    *   `spr_font.[h|c]`: Bitmap font utilities.
+*   `apps/`: Applications.
+    *   `viewer/`: The full interactive object viewer.
+    *   `template/`: A minimal "Hello World" example.
+    *   `test_headless/`: Automated testing.
+*   `lib/`: Compiled static library (`libspr.a`).
+*   `bin/`: Compiled executables.
+*   `Makefile`: Generalized build system.

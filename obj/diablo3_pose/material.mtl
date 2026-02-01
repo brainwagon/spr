@@ -1,0 +1,12 @@
+newmtl Diablo_Diffuse
+Ns 10.0          # Specular exponent
+Ka 0.2 0.2 0.2   # Ambient color (gray)
+Kd 0.5 0.5 0.5   # Diffuse color (gray)
+Ks 0.7 0.7 0.7   # Specular color (light gray)
+Ke 1.0 1.0 1.0   # Emissive color
+d 1.0            # Dissolve (transparency)
+illum 2          # Illumination model
+map_Kd diablo3_pose_diffuse.tga
+map_Ks diablo3_pose_spec.tga
+map_Ke diablo3_pose_glow.tga
+norm diablo3_pose_nm_tangent.tga

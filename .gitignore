@@ -1,5 +1,7 @@
 # Binaries
-viewer
+/bin/
+/lib/
+/viewer
 test_spr
 test_spr_final
 test_spr_phase2

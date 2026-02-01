@@ -1,0 +1,7 @@
+newmtl GrayPlastic
+Ns 10.0          # Specular exponent
+Ka 0.2 0.2 0.2   # Ambient color (gray)
+Kd 0.5 0.5 0.5   # Diffuse color (gray)
+Ks 0.7 0.7 0.7   # Specular color (light gray)
+d 1.0            # Dissolve (transparency)
+illum 2          # Illumination model
