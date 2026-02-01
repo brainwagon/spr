@@ -1,5 +1,5 @@
 #include "spr_font.h"
-#include "font.h"
+#include "spr_font_data.h"
 #include <stddef.h>
 
 void spr_draw_char_overlay(uint32_t* buffer, int width, int height, int x, int y, char c, uint32_t color) {
