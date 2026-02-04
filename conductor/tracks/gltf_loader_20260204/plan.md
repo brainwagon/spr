@@ -32,12 +32,12 @@
     - [x] Sub-task: Handle UV coordinates (`TEXCOORD_0`) extraction.
 - [x] Task: Conductor - User Manual Verification 'Material & Texture Support' (Protocol in workflow.md) 6d7b824
 
-## Phase 4: Integration & Validation
-- [x] Task: Integrate into `spr_loader.c`.
+## Phase 4: Integration & Validation [checkpoint: bedf12d]
+- [x] Task: Integrate into `spr_loader.c`. d5f2e44
     - [x] Sub-task: Update the main `spr_load_model` function to detect `.gltf`/`.glb` extensions and dispatch to `spr_load_gltf`.
-- [x] Task: Update Viewer Application.
+- [x] Task: Update Viewer Application. d5f2e44
     - [x] Sub-task: Allow the viewer to accept glTF files as command-line arguments.
-- [x] Task: Final Validation.
+- [x] Task: Final Validation. d5f2e44
     - [x] Sub-task: Test with the standard glTF sample models (Box, Duck, etc.).
     - [x] Sub-task: Verify memory usage and check for leaks.
-- [~] Task: Conductor - User Manual Verification 'Integration & Validation' (Protocol in workflow.md)
+- [x] Task: Conductor - User Manual Verification 'Integration & Validation' (Protocol in workflow.md) bedf12d
