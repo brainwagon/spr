@@ -6,6 +6,50 @@
 #define CGLTF_IMPLEMENTATION
 #include "cgltf.h"
 
+/* Helper to get directory part of a path */
+static char* get_directory(const char* path) {
+    char* dir = strdup(path);
+    char* last_slash = strrchr(dir, '/');
+    if (last_slash) {
+        *last_slash = '\0';
+    } else {
+        free(dir);
+        return NULL;
+    }
+    return dir;
+}
+
+static spr_texture_t* load_gltf_texture(cgltf_texture* gtex, const char* base_path) {
+    if (!gtex || !gtex->image) return NULL;
+    
+    cgltf_image* img = gtex->image;
+    
+    if (img->buffer_view) {
+        /* Embedded in GLB/buffer */
+        uint8_t* data = (uint8_t*)img->buffer_view->buffer->data + img->buffer_view->offset;
+        return spr_texture_load_from_memory(data, (int)img->buffer_view->size);
+    } else if (img->uri) {
+        /* External file */
+        if (strncmp(img->uri, "data:", 5) == 0) {
+            /* Base64 data URI - let cgltf handle decoding if we used its helper, 
+               but for now we focus on files and GLB. cgltf_load_buffers handles data URIs. */
+            return NULL; 
+        } else {
+            char path[1024];
+            char* dir = get_directory(base_path);
+            if (dir) {
+                snprintf(path, sizeof(path), "%s/%s", dir, img->uri);
+                free(dir);
+            } else {
+                snprintf(path, sizeof(path), "%s", img->uri);
+            }
+            return spr_texture_load(path);
+        }
+    }
+    
+    return NULL;
+}
+
 spr_mesh_t* spr_load_gltf(const char* filename) {
     cgltf_options options = {0};
     cgltf_data* data = NULL;
@@ -85,8 +129,34 @@ spr_mesh_t* spr_load_gltf(const char* filename) {
             vertices[i].uv.x = 0; vertices[i].uv.y = 0;
         }
         
-        /* Tangent (Calculated or empty for now) */
+        /* Tangent */
         vertices[i].tangent.x = 0; vertices[i].tangent.y = 0; vertices[i].tangent.z = 0; vertices[i].tangent.w = 1;
+    }
+
+    /* Handle Material */
+    mesh->material_count = 1;
+    mesh->materials = (spr_material_t*)calloc(1, sizeof(spr_material_t));
+    spr_material_t* mat = &mesh->materials[0];
+    strcpy(mat->name, "gltf_material");
+    
+    /* Default material properties */
+    mat->Kd.x = 1; mat->Kd.y = 1; mat->Kd.z = 1;
+    mat->d = 1.0f;
+
+    if (prim->material) {
+        cgltf_material* gmat = prim->material;
+        if (gmat->has_pbr_metallic_roughness) {
+            mat->Kd.x = gmat->pbr_metallic_roughness.base_color_factor[0];
+            mat->Kd.y = gmat->pbr_metallic_roughness.base_color_factor[1];
+            mat->Kd.z = gmat->pbr_metallic_roughness.base_color_factor[2];
+            mat->d = gmat->pbr_metallic_roughness.base_color_factor[3];
+            
+            mat->map_Kd = load_gltf_texture(gmat->pbr_metallic_roughness.base_color_texture.texture, filename);
+        }
+        
+        if (gmat->normal_texture.texture) {
+            mat->norm = load_gltf_texture(gmat->normal_texture.texture, filename);
+        }
     }
 
     /* Create a single group */
@@ -94,7 +164,7 @@ spr_mesh_t* spr_load_gltf(const char* filename) {
     mesh->groups = (spr_mesh_group_t*)calloc(1, sizeof(spr_mesh_group_t));
     mesh->groups[0].start_vertex = 0;
     mesh->groups[0].vertex_count = mesh->vertex_count;
-    mesh->groups[0].material = NULL;
+    mesh->groups[0].material = mat;
 
     cgltf_free(data);
     return mesh; 
