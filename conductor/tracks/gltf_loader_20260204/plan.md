@@ -33,11 +33,11 @@
 - [x] Task: Conductor - User Manual Verification 'Material & Texture Support' (Protocol in workflow.md) 6d7b824
 
 ## Phase 4: Integration & Validation
-- [ ] Task: Integrate into `spr_loader.c`.
-    - [ ] Sub-task: Update the main `spr_load_model` function to detect `.gltf`/`.glb` extensions and dispatch to `spr_load_gltf`.
-- [ ] Task: Update Viewer Application.
-    - [ ] Sub-task: Allow the viewer to accept glTF files as command-line arguments.
-- [ ] Task: Final Validation.
-    - [ ] Sub-task: Test with the standard glTF sample models (Box, Duck, etc.).
-    - [ ] Sub-task: Verify memory usage and check for leaks.
-- [ ] Task: Conductor - User Manual Verification 'Integration & Validation' (Protocol in workflow.md)
+- [x] Task: Integrate into `spr_loader.c`.
+    - [x] Sub-task: Update the main `spr_load_model` function to detect `.gltf`/`.glb` extensions and dispatch to `spr_load_gltf`.
+- [x] Task: Update Viewer Application.
+    - [x] Sub-task: Allow the viewer to accept glTF files as command-line arguments.
+- [x] Task: Final Validation.
+    - [x] Sub-task: Test with the standard glTF sample models (Box, Duck, etc.).
+    - [x] Sub-task: Verify memory usage and check for leaks.
+- [~] Task: Conductor - User Manual Verification 'Integration & Validation' (Protocol in workflow.md)
