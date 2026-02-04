@@ -37,6 +37,30 @@ spr_texture_t* spr_texture_load(const char* filename) {
     return tex;
 }
 
+spr_texture_t* spr_texture_load_from_memory(const uint8_t* data, int size) {
+    int w, h, n;
+    unsigned char *decoded = stbi_load_from_memory(data, size, &w, &h, &n, 0);
+    
+    if (!decoded) {
+        printf("SPR Texture: Failed to load from memory (stbi error: %s)\n", stbi_failure_reason());
+        return NULL;
+    }
+    
+    spr_texture_t* tex = (spr_texture_t*)malloc(sizeof(spr_texture_t));
+    if (!tex) {
+        stbi_image_free(decoded);
+        return NULL;
+    }
+    
+    tex->width = w;
+    tex->height = h;
+    tex->channels = n;
+    tex->pixels = decoded;
+    tex->sample_count = 0;
+    
+    return tex;
+}
+
 void spr_texture_free(spr_texture_t* tex) {
     if (tex) {
         if (tex->pixels) stbi_image_free(tex->pixels);

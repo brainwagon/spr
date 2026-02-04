@@ -16,6 +16,7 @@ typedef struct {
 
 /* Returns NULL if failed or if texturing is disabled */
 spr_texture_t* spr_texture_load(const char* filename);
+spr_texture_t* spr_texture_load_from_memory(const uint8_t* data, int size);
 
 void spr_texture_free(spr_texture_t* tex);
 
