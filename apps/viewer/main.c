@@ -117,6 +117,8 @@ int main(int argc, char* argv[]) {
         printf("Failed to load mesh.\n");
         return 1;
     }
+    printf("Mesh Info: %d vertices (%d triangles), %d groups, %d materials\n", 
+           mesh->vertex_count, mesh->vertex_count/3, mesh->group_count, mesh->material_count);
     
     /* Load Texture Override */
     spr_texture_t* spr_tex = NULL;
