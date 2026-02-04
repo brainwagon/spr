@@ -319,14 +319,23 @@ static spr_mesh_t* load_obj(const char* filename) {
                         spr_vertex_t* out_v = da_push(&vertices);
                         current_group.vertex_count++;
                         
-                        vec3_t* p = da_get(&pos_list, tri[k].v_idx - 1);
+                        int v_idx = tri[k].v_idx;
+                        if (v_idx < 0) v_idx = pos_list.count + v_idx;
+                        else v_idx--;
+                        vec3_t* p = da_get(&pos_list, v_idx);
                         if (p) out_v->position = *p;
                         
-                        vec3_t* n = da_get(&norm_list, tri[k].vn_idx - 1);
+                        int vn_idx = tri[k].vn_idx;
+                        if (vn_idx < 0) vn_idx = norm_list.count + vn_idx;
+                        else vn_idx--;
+                        vec3_t* n = da_get(&norm_list, vn_idx);
                         if (n) out_v->normal = *n;
                         else { out_v->normal.x=0; out_v->normal.y=1; out_v->normal.z=0; }
                         
-                        vec2_t* uv = da_get(&uv_list, tri[k].vt_idx - 1);
+                        int vt_idx = tri[k].vt_idx;
+                        if (vt_idx < 0) vt_idx = uv_list.count + vt_idx;
+                        else vt_idx--;
+                        vec2_t* uv = da_get(&uv_list, vt_idx);
                         if (uv) out_v->uv = *uv;
                         else { out_v->uv.x=0; out_v->uv.y=0; }
                     }
