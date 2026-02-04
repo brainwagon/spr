@@ -9,19 +9,19 @@
     - [x] Sub-task: Update `Makefile` to include the new source files.
 - [x] Task: Conductor - User Manual Verification 'Dependencies & Infrastructure' (Protocol in workflow.md) a8025bb
 
-## Phase 2: Basic Parsing & Geometry
-- [x] Task: Implement GLB header and chunk parsing.
+## Phase 2: Basic Parsing & Geometry [checkpoint: e783fca]
+- [x] Task: Implement GLB header and chunk parsing. 4d115f9
     - [x] Sub-task: Create a test GLB file (simple triangle).
     - [x] Sub-task: Write a unit test to verify header parsing (magic, version, length).
     - [x] Sub-task: Implement the GLB parsing logic.
-- [x] Task: Implement JSON structure parsing (Nodes, Meshes, Accessors).
+- [x] Task: Implement JSON structure parsing (Nodes, Meshes, Accessors). 4d115f9
     - [x] Sub-task: Map glTF JSON objects to internal C structs.
     - [x] Sub-task: Implement `bufferView` and `accessor` data extraction logic.
-- [x] Task: Implement Mesh Data Extraction.
+- [x] Task: Implement Mesh Data Extraction. 4d115f9
     - [x] Sub-task: Write logic to extract `POSITION` data into `spr_model_t` vertices.
     - [x] Sub-task: Write logic to extract `INDICES` data into `spr_model_t` indices.
     - [x] Sub-task: Write a test to load a simple untextured mesh (e.g., a cube) and verify vertex/index counts.
-- [~] Task: Conductor - User Manual Verification 'Basic Parsing & Geometry' (Protocol in workflow.md)
+- [x] Task: Conductor - User Manual Verification 'Basic Parsing & Geometry' (Protocol in workflow.md) e783fca
 
 ## Phase 3: Material & Texture Support
 - [ ] Task: Implement Texture Loading for glTF.
