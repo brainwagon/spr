@@ -1,13 +1,13 @@
 # Implementation Plan - Track: glTF 2.0 Loader
 
-## Phase 1: Dependencies & Infrastructure
+## Phase 1: Dependencies & Infrastructure [checkpoint: a8025bb]
 - [x] Task: Research and select a minimal JSON parser (e.g., `cgltf` or `parson`) compatible with the project's license and dependency philosophy. 17cdba8
     - [x] Sub-task: Verify candidate libraries against the "minimal dependencies" rule.
     - [x] Sub-task: Vendor the selected library into `src/` (or `src/external/`).
 - [x] Task: Create `spr_gltf_loader.h` and `spr_gltf_loader.c` stubs. 0c5cbee
     - [x] Sub-task: Define the public API `spr_load_gltf`.
     - [x] Sub-task: Update `Makefile` to include the new source files.
-- [ ] Task: Conductor - User Manual Verification 'Dependencies & Infrastructure' (Protocol in workflow.md)
+- [x] Task: Conductor - User Manual Verification 'Dependencies & Infrastructure' (Protocol in workflow.md) a8025bb
 
 ## Phase 2: Basic Parsing & Geometry
 - [ ] Task: Implement GLB header and chunk parsing.
