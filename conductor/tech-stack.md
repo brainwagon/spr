@@ -5,12 +5,13 @@
 - **Dependencies:** 
     - Standard C Library (libc).
     - `stb_image.h` (Vendored) for texture loading.
+    - `cgltf.h` (Vendored) for glTF 2.0 parsing.
     - Ubiquitous system libraries: `zlib`, `libpng` (Optional/Pragmatic).
 - **Output:** Raw RGB or RGBA pixel buffers.
 - **Internal APIs:** 
     - Custom 3D Math (Vectors/Matrices).
     - Software Rasterizer (SIMD optimized where applicable).
-    - Unified Mesh Loader (STL, OBJ/MTL).
+    - Unified Mesh Loader (STL, OBJ/MTL, glTF 2.0/GLB).
 
 ## Application Layer (Example Apps & Viewers)
 - **Language:** C (C99/C11).
