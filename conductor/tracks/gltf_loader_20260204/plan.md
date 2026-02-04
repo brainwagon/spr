@@ -23,14 +23,14 @@
     - [x] Sub-task: Write a test to load a simple untextured mesh (e.g., a cube) and verify vertex/index counts.
 - [x] Task: Conductor - User Manual Verification 'Basic Parsing & Geometry' (Protocol in workflow.md) e783fca
 
-## Phase 3: Material & Texture Support
-- [ ] Task: Implement Texture Loading for glTF.
-    - [ ] Sub-task: Parse `images` and `textures` nodes.
-    - [ ] Sub-task: Integrate with `stb_image` to load texture data from buffers (embedded) or URIs.
-- [ ] Task: Implement Material Mapping.
-    - [ ] Sub-task: Map `pbrMetallicRoughness` properties to `spr_material_t`.
-    - [ ] Sub-task: Handle UV coordinates (`TEXCOORD_0`) extraction.
-- [ ] Task: Conductor - User Manual Verification 'Material & Texture Support' (Protocol in workflow.md)
+## Phase 3: Material & Texture Support [checkpoint: 6d7b824]
+- [x] Task: Implement Texture Loading for glTF. 28f10de
+    - [x] Sub-task: Parse `images` and `textures` nodes.
+    - [x] Sub-task: Integrate with `stb_image` to load texture data from buffers (embedded) or URIs.
+- [x] Task: Implement Material Mapping. a2a0cb6
+    - [x] Sub-task: Map `pbrMetallicRoughness` properties to `spr_material_t`.
+    - [x] Sub-task: Handle UV coordinates (`TEXCOORD_0`) extraction.
+- [x] Task: Conductor - User Manual Verification 'Material & Texture Support' (Protocol in workflow.md) 6d7b824
 
 ## Phase 4: Integration & Validation
 - [ ] Task: Integrate into `spr_loader.c`.
