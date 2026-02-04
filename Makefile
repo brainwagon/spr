@@ -11,7 +11,7 @@ BINDIR = bin
 LIB_SRCS = $(wildcard $(SRCDIR)/*.c)
 LIB_OBJS = $(LIB_SRCS:.c=.o)
 
-all: dirs lib viewer template test
+all: dirs lib viewer template test test_gltf
 
 dirs:
 	mkdir -p $(LIBDIR) $(BINDIR)
@@ -30,6 +30,9 @@ template: apps/template/main.c lib
 
 test: apps/test_headless/main.c lib
 	$(CC) $(CFLAGS) apps/test_headless/main.c -o $(BINDIR)/test $(LDFLAGS)
+
+test_gltf: apps/test_gltf/main.c lib
+	$(CC) $(CFLAGS) apps/test_gltf/main.c -o $(BINDIR)/test_gltf $(LDFLAGS)
 
 clean:
 	rm -f $(SRCDIR)/*.o $(LIBDIR)/*.a $(BINDIR)/*
