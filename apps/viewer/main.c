@@ -49,7 +49,8 @@ const char* get_shader_name(shader_type_t s) {
 }
 
 void print_help(const char* prog_name) {
-    printf("Usage: %s <stl_file> [texture_file] [options]\n", prog_name);
+    printf("Usage: %s <model_file> [texture_file] [options]\n", prog_name);
+    printf("Supported formats: .obj, .stl, .gltf, .glb\n");
     printf("\nOptions:\n");
     printf("  -simd       Use SIMD rasterizer (if available)\n");
     printf("  -cpu        Use CPU rasterizer (default)\n");

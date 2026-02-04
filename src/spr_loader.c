@@ -1,4 +1,5 @@
 #include "spr_loader.h"
+#include "spr_gltf_loader.h"
 #include "stl.h"
 #include "spr.h"
 #include <stdio.h>
@@ -388,6 +389,8 @@ spr_mesh_t* spr_load_mesh(const char* filename) {
     
     if (strcasecmp(ext, ".obj") == 0) {
         return load_obj(filename);
+    } else if (strcasecmp(ext, ".gltf") == 0 || strcasecmp(ext, ".glb") == 0) {
+        return spr_load_gltf(filename);
     } else if (strcasecmp(ext, ".stl") == 0) {
         stl_object_t* stl = stl_load(filename);
         if (!stl) return NULL;
